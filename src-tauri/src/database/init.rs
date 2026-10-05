@@ -1,6 +1,21 @@
 use super::get_db_connection;
 
 pub(crate) const SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin', 'cashier')),
+    is_active INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS suppliers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -189,6 +204,29 @@ pub async fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)", ()).await.map_err(|e| e.to_string())?;
     conn.execute("CREATE INDEX IF NOT EXISTS idx_transaction_details_type ON transaction_details(item_type)", ()).await.map_err(|e| e.to_string())?;
     conn.execute("CREATE INDEX IF NOT EXISTS idx_transactions_vehicle_plate ON transactions(vehicle_plate)", ()).await.map_err(|e| e.to_string())?;
+
+    // Seed default users when empty
+    let user_count: i64 = match conn.query("SELECT COUNT(*) FROM users", ()).await {
+        Ok(mut rows) => match rows.next().await {
+            Ok(Some(row)) => row.get(0).unwrap_or(0),
+            _ => 0,
+        },
+        _ => 0,
+    };
+    if user_count == 0 {
+        if let Ok(admin_hash) = crate::auth::hash_password("admin123") {
+            let _ = conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES ('admin', ?, 'admin')",
+                libsql::params![admin_hash],
+            ).await;
+        }
+        if let Ok(cashier_hash) = crate::auth::hash_password("kasir123") {
+            let _ = conn.execute(
+                "INSERT INTO users (username, password_hash, role) VALUES ('kasir', ?, 'cashier')",
+                libsql::params![cashier_hash],
+            ).await;
+        }
+    }
 
     // Seed only once: skip when master data already exists
     let mut rows = conn

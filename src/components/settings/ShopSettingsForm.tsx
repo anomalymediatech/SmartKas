@@ -42,7 +42,7 @@ export function ShopSettingsForm() {
     try {
       await updateSettings(formData);
       success('Berhasil', 'Pengaturan toko disimpan');
-    } catch (err) {
+    } catch {
       error('Gagal', 'Gagal menyimpan pengaturan');
     }
   };

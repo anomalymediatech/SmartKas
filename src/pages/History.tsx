@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, Calendar, Eye, Printer, RotateCcw, Filter, X } from 'lucide-react';
-import { Button, Input, Modal, Table, TablePagination, Badge } from '@/components/ui';
+import { Search, Eye, Printer, RotateCcw, Filter, X } from 'lucide-react';
+import { Button, Modal, Table, TablePagination, Badge } from '@/components/ui';
 import { useHistoryStore } from '@/stores';
 import { useToast } from '@/hooks/useToast';
 import { formatIndonesianDate } from '@/utils/date';
@@ -14,13 +14,11 @@ export default function HistoryPage() {
     selectedDetails, 
     filters, 
     isLoading, 
-    error, 
     totalCount,
     loadTransactions, 
     setFilters, 
     selectTransaction, 
     voidTransaction,
-    refresh 
   } = useHistoryStore();
   
   const { success, error: showError } = useToast();
@@ -35,14 +33,6 @@ export default function HistoryPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setFilters({ search: searchValue || undefined, page: 1 });
-  };
-
-  const handleDateChange = () => {
-    setFilters({ 
-      date_from: dateFrom || undefined, 
-      date_to: dateTo || undefined, 
-      page: 1 
-    });
   };
 
   const clearFilters = () => {

@@ -1,29 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Search, Package, Plus, RotateCcw, Filter, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
-import { Button, Input, Modal, Table, TablePagination, Badge } from '@/components/ui';
+import { Search, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Button, Table, TablePagination, Badge } from '@/components/ui';
 import { useInventoryStore } from '@/stores';
 import { useAppStore } from '@/stores/useAppStore';
-import { useToast } from '@/hooks/useToast';
 import { formatRupiah } from '@/utils/currency';
 import { StockAdjustmentModal } from '@/components/settings/StockAdjustmentModal';
+import { useAuth } from '@/context/AuthContext';
 import type { Sparepart } from '@/types';
 
 export default function InventoryPage() {
-  const { 
-    spareparts, 
-    stockMovements, 
-    isLoading, 
-    error, 
-    loadSpareparts, 
-    adjustStock, 
-    loadStockMovements,
-    getLowStockItems,
-    searchQuery,
-  } = useInventoryStore();
-  
+  const { isLoading, loadSpareparts, getLowStockItems } = useInventoryStore();
+
   const { spareparts: allSpareparts } = useAppStore();
-  const { success, error: showError } = useToast();
-  
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [searchValue, setSearchValue] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [selectedPart, setSelectedPart] = useState<Sparepart | null>(null);
@@ -58,7 +49,7 @@ export default function InventoryPage() {
 
   const columns = [
     { key: 'name', header: 'Nama Sparepart', render: (row: Sparepart) => <span className="font-medium">{row.name}</span> },
-    { key: 'buy_price', header: 'Harga Beli', render: (row: Sparepart) => <span className="font-mono">{formatRupiah(row.buy_price)}</span> },
+    ...(isAdmin ? [{ key: 'buy_price', header: 'Harga Beli', render: (row: Sparepart) => <span className="font-mono">{formatRupiah(row.buy_price)}</span> }] : []),
     { key: 'sell_price', header: 'Harga Jual', render: (row: Sparepart) => <span className="font-mono font-semibold">{formatRupiah(row.sell_price)}</span> },
     { 
       key: 'stock', 

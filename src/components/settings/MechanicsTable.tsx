@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Plus, Edit, Trash2, UserCheck, UserX } from 'lucide-react';
+import { Plus, Edit, Trash2 } from 'lucide-react';
 import { Button, Input, Modal, Table, TablePagination } from '@/components/ui';
 import { useAppStore } from '@/stores';
 import { useToast } from '@/hooks/useToast';
 import type { Mechanic } from '@/types';
 
 export function MechanicsTable() {
-  const { mechanics, loadMechanics, addMechanic, updateMechanic, deleteMechanic, toggleMechanicActive, isLoading } = useAppStore();
+  const { mechanics, addMechanic, updateMechanic, deleteMechanic, toggleMechanicActive, isLoading } = useAppStore();
   const { success, error } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,7 +37,7 @@ export function MechanicsTable() {
         success('Berhasil', 'Mekanik ditambahkan');
       }
       setIsModalOpen(false);
-    } catch (err) {
+    } catch {
       error('Gagal', editingMechanic ? 'Gagal memperbarui mekanik' : 'Gagal menambah mekanik');
     }
   };
@@ -51,7 +51,7 @@ export function MechanicsTable() {
       await deleteMechanic(id);
       success('Berhasil', 'Mekanik dihapus');
       setDeleteConfirmId(null);
-    } catch (err) {
+    } catch {
       error('Gagal', 'Gagal menghapus mekanik');
     }
   };
@@ -60,7 +60,7 @@ export function MechanicsTable() {
     try {
       await toggleMechanicActive(mechanic.id, mechanic.is_active === 1 ? 0 : 1);
       success('Berhasil', `Mekanik ${mechanic.is_active === 1 ? 'dinonaktifkan' : 'diaktifkan'}`);
-    } catch (err) {
+    } catch {
       error('Gagal', 'Gagal mengubah status');
     }
   };

@@ -7,7 +7,7 @@ import { formatRupiah, parseRupiah } from '@/utils/currency';
 import type { Service } from '@/types';
 
 export function ServicesTable() {
-  const { services, loadServices, addService, updateService, deleteService, isLoading } = useAppStore();
+  const { services, addService, updateService, deleteService, isLoading } = useAppStore();
   const { success, error } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -49,7 +49,7 @@ export function ServicesTable() {
         success('Berhasil', 'Layanan ditambahkan');
       }
       setIsModalOpen(false);
-    } catch (err) {
+    } catch {
       error('Gagal', editingService ? 'Gagal memperbarui layanan' : 'Gagal menambah layanan');
     }
   };
@@ -63,7 +63,7 @@ export function ServicesTable() {
       await deleteService(id);
       success('Berhasil', 'Layanan dihapus');
       setDeleteConfirmId(null);
-    } catch (err) {
+    } catch {
       error('Gagal', 'Gagal menghapus layanan');
     }
   };

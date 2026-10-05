@@ -9,7 +9,7 @@ import { formatRupiah } from '@/utils/currency';
 
 export default function PurchasesPage() {
   const { data: suppliers, mutate: reloadSuppliers } = useSWR('suppliers', dbGetSuppliers);
-  const { data: purchaseOrders, mutate: reloadPOs } = useSWR('purchase-orders', () => dbGetPurchaseOrders());
+  const { data: purchaseOrders, mutate: reloadPOs, isLoading: loadingPOs } = useSWR('purchase-orders', () => dbGetPurchaseOrders());
   const { data: spareparts } = useSWR('spareparts', () => dbGetSpareparts(false));
   const { success, error } = useToast();
 
@@ -101,7 +101,8 @@ export default function PurchasesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-industrial-100">
-                  {pending.length === 0 && <tr><td colSpan={6} className="px-5 py-6 text-center text-industrial-400">Tidak ada PO pending</td></tr>}
+                  {loadingPOs && <tr><td colSpan={6} className="px-5 py-6 text-center text-industrial-400">Memuat…</td></tr>}
+                  {pending.length === 0 && !loadingPOs && <tr><td colSpan={6} className="px-5 py-6 text-center text-industrial-400">Tidak ada PO pending</td></tr>}
                   {pending.map((po) => (
                     <tr key={po.id}>
                       <td className="px-5 py-2.5 font-mono">#{po.id}</td>

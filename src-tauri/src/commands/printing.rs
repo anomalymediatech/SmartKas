@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::escpos::receipt::build_receipt_bytes;
 use crate::database::repositories::transactions::{get_transaction_details, Transaction};
 use crate::database::repositories::settings::get_settings;
@@ -5,7 +6,7 @@ use crate::database::get_db_connection;
 use anyhow::Result;
 
 #[tauri::command]
-pub async fn print_receipt(app_handle: tauri::AppHandle, transaction_id: i64, printer_name: Option<String>, paper_width: u8) -> Result<Vec<u8>, String> {
+pub async fn print_receipt(app_handle: tauri::AppHandle, transaction_id: i64, printer_name: Option<String>, paper_width: u8) -> Result<Vec<u8>, AppError> {
     let pool = get_db_connection(&app_handle).await?;
 
     // Get transaction
@@ -60,7 +61,7 @@ pub async fn print_receipt(app_handle: tauri::AppHandle, transaction_id: i64, pr
 }
 
 #[tauri::command]
-pub async fn get_printers(_app_handle: tauri::AppHandle) -> Result<Vec<PrinterInfo>, String> {
+pub async fn get_printers(_app_handle: tauri::AppHandle) -> Result<Vec<PrinterInfo>, AppError> {
     let printers = get_windows_printers().map_err(|e| e.to_string())?;
     Ok(printers)
 }

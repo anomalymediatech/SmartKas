@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
-import { Search, Plus, X, Package, AlertTriangle } from 'lucide-react';
-import { Input, Button, Badge } from '@/components/ui';
+import { Search, X, Package, AlertTriangle } from 'lucide-react';
+import { Badge } from '@/components/ui';
 import { usePOSStore } from '@/stores';
 import { useAppStore } from '@/stores/useAppStore';
 import { formatRupiah } from '@/utils/currency';

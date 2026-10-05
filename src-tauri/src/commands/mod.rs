@@ -9,3 +9,4 @@ pub mod dashboard;
 pub mod vehicle;
 pub mod employees;
 pub mod supplies;
+pub mod auth;

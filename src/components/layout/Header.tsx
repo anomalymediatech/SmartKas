@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Package, History, Settings, Settings2, Wrench, ShoppingBag, Users, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Package, History, Settings2, Wrench, ShoppingBag, Users, ShoppingCart } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { useAuth } from '@/context/AuthContext';
 
 interface HeaderProps {
   currentPage: string;
@@ -8,17 +9,20 @@ interface HeaderProps {
 }
 
 const navItems = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, shortcut: '' },
-  { key: 'pos', label: 'POS', icon: ShoppingBag, shortcut: 'F1' },
-  { key: 'history', label: 'Riwayat', icon: History, shortcut: 'F2' },
-  { key: 'inventory', label: 'Inventori', icon: Package, shortcut: 'F3' },
-  { key: 'employees', label: 'Karyawan', icon: Users, shortcut: '' },
-  { key: 'purchases', label: 'Pembelian', icon: ShoppingCart, shortcut: '' },
-  { key: 'settings', label: 'Pengaturan', icon: Settings2, shortcut: 'F4' },
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, shortcut: '', adminOnly: true },
+  { key: 'pos', label: 'POS', icon: ShoppingBag, shortcut: 'F1', adminOnly: false },
+  { key: 'history', label: 'Riwayat', icon: History, shortcut: 'F2', adminOnly: false },
+  { key: 'inventory', label: 'Inventori', icon: Package, shortcut: 'F3', adminOnly: false },
+  { key: 'employees', label: 'Karyawan', icon: Users, shortcut: '', adminOnly: true },
+  { key: 'purchases', label: 'Pembelian', icon: ShoppingCart, shortcut: '', adminOnly: true },
+  { key: 'settings', label: 'Pengaturan', icon: Settings2, shortcut: 'F4', adminOnly: false },
 ];
 
 export function Header({ currentPage, onNavigate }: HeaderProps) {
   const [time, setTime] = useState(new Date());
+  const { user, logout } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const visibleNavItems = navItems.filter((item) => isAdmin || !item.adminOnly);
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
@@ -37,7 +41,7 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
               <span className="text-xl font-bold text-industrial-900">SmartKas</span>
             </div>
             <nav className="hidden md:flex items-center gap-1" role="navigation" aria-label="Navigasi utama">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPage === item.key;
                 return (
@@ -68,6 +72,19 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
             <div className="hidden sm:block text-sm text-industrial-500 font-mono">
               {time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </div>
+            {user && (
+              <>
+                <span className="hidden sm:inline text-sm text-industrial-600">
+                  {user.username} <span className="text-xs text-industrial-400">({user.role})</span>
+                </span>
+                <button
+                  onClick={logout}
+                  className="px-3 py-1.5 text-sm rounded-lg text-danger-600 hover:bg-red-50 border border-red-200 transition-colors"
+                >
+                  Keluar
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

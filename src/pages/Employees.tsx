@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/useToast';
 import { formatRupiah } from '@/utils/currency';
 
 export default function EmployeesPage() {
-  const { data: employees, mutate: reloadEmployees } = useSWR('employees', dbGetEmployees);
+  const { data: employees, mutate: reloadEmployees, isLoading: loadingEmployees } = useSWR('employees', dbGetEmployees);
   const { success, error } = useToast();
 
   const [showAdd, setShowAdd] = useState(false);
@@ -90,6 +90,7 @@ export default function EmployeesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-industrial-100">
+                {loadingEmployees && <tr><td colSpan={6} className="px-5 py-8 text-center text-industrial-400">Memuat…</td></tr>}
                 {(employees ?? []).map((emp) => (
                   <tr key={emp.id} className={emp.is_active ? '' : 'opacity-50'}>
                     <td className="px-5 py-3 font-medium text-industrial-900">{emp.name}</td>

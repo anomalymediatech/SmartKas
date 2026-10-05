@@ -1,4 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
+
+function getToken(): string {
+  return localStorage.getItem('smartkas.session_token') ?? '';
+}
+
 import type { 
   Settings, 
   Mechanic, 
@@ -120,11 +125,11 @@ export async function dbGetPrinters(): Promise<PrinterInfo[]> {
 }
 
 export async function dbBackupDatabase(path: string): Promise<void> {
-  await invoke('backup_database', { path });
+  await invoke('backup_database', { token: getToken(), path });
 }
 
 export async function dbRestoreDatabase(path: string): Promise<void> {
-  await invoke('restore_database', { path });
+  await invoke('restore_database', { token: getToken(), path });
 }
 
 export interface DailySummary {
@@ -245,23 +250,23 @@ export interface MechanicMonthlySummary {
 }
 
 export async function dbGetEmployees(): Promise<Employee[]> {
-  return await invoke('get_employees');
+  return await invoke('get_employees', { token: getToken() });
 }
 
 export async function dbAddEmployee(data: CreateEmployeeInput): Promise<Employee> {
-  return await invoke('add_employee', { data });
+  return await invoke('add_employee', { token: getToken(), data });
 }
 
 export async function dbDeleteEmployee(id: number): Promise<void> {
-  await invoke('delete_employee', { id });
+  await invoke('delete_employee', { token: getToken(), id });
 }
 
 export async function dbCalculateMechanicCommission(dateFrom?: string, dateTo?: string): Promise<MechanicCommissionSummary[]> {
-  return await invoke('calculate_mechanic_commission', { dateFrom: dateFrom ?? null, dateTo: dateTo ?? null });
+  return await invoke('calculate_mechanic_commission', { token: getToken(), dateFrom: dateFrom ?? null, dateTo: dateTo ?? null });
 }
 
 export async function dbGetMechanicMonthlySummary(employeeId: number, month: number, year: number): Promise<MechanicMonthlySummary> {
-  return await invoke('get_mechanic_monthly_summary', { employeeId, month, year });
+  return await invoke('get_mechanic_monthly_summary', { token: getToken(), employeeId, month, year });
 }
 
 export interface Supplier {

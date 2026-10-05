@@ -203,6 +203,42 @@ pub async fn receive_purchase_order(pool: &DbPool, po_id: i64) -> Result<()> {
     }
 }
 
+
+pub async fn get_purchase_orders(pool: &DbPool, status: Option<&str>) -> Result<Vec<PurchaseOrder>> {
+    let conn = pool.lock().await;
+    let mut rows = if let Some(s) = status {
+        conn.query(
+            "SELECT po.id, po.supplier_id, s.name, po.purchase_date, po.total_cost, po.status, po.created_by
+             FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
+             WHERE po.status = ? ORDER BY po.purchase_date DESC",
+            params![s],
+        )
+        .await?
+    } else {
+        conn.query(
+            "SELECT po.id, po.supplier_id, s.name, po.purchase_date, po.total_cost, po.status, po.created_by
+             FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
+             ORDER BY po.purchase_date DESC",
+            (),
+        )
+        .await?
+    };
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(PurchaseOrder {
+            id: row.get(0)?,
+            supplier_id: row.get(1)?,
+            supplier_name: row.get(2)?,
+            purchase_date: row.get(3)?,
+            total_cost: row.get(4)?,
+            status: row.get(5)?,
+            created_by: row.get(6)?,
+        });
+    }
+    Ok(out)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,38 +360,4 @@ mod tests {
         assert_eq!(pending[0].supplier_name.as_deref(), Some("CV Maju"));
         assert_eq!(get_purchase_orders(&pool, Some("Received")).await.unwrap().len(), 0);
     }
-}
-
-pub async fn get_purchase_orders(pool: &DbPool, status: Option<&str>) -> Result<Vec<PurchaseOrder>> {
-    let conn = pool.lock().await;
-    let mut rows = if let Some(s) = status {
-        conn.query(
-            "SELECT po.id, po.supplier_id, s.name, po.purchase_date, po.total_cost, po.status, po.created_by
-             FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
-             WHERE po.status = ? ORDER BY po.purchase_date DESC",
-            params![s],
-        )
-        .await?
-    } else {
-        conn.query(
-            "SELECT po.id, po.supplier_id, s.name, po.purchase_date, po.total_cost, po.status, po.created_by
-             FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
-             ORDER BY po.purchase_date DESC",
-            (),
-        )
-        .await?
-    };
-    let mut out = Vec::new();
-    while let Some(row) = rows.next().await? {
-        out.push(PurchaseOrder {
-            id: row.get(0)?,
-            supplier_id: row.get(1)?,
-            supplier_name: row.get(2)?,
-            purchase_date: row.get(3)?,
-            total_cost: row.get(4)?,
-            status: row.get(5)?,
-            created_by: row.get(6)?,
-        });
-    }
-    Ok(out)
 }

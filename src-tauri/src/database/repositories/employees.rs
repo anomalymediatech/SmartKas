@@ -51,6 +51,176 @@ pub struct MechanicMonthlySummary {
     pub lines: Vec<CommissionLine>,
 }
 
+
+pub async fn get_employees(pool: &DbPool) -> Result<Vec<Employee>> {
+    let conn = pool.lock().await;
+    let mut rows = conn
+        .query("SELECT id, name, role, phone, commission_rate, base_salary, is_active FROM employees ORDER BY name", ())
+        .await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(Employee {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            role: row.get(2)?,
+            phone: row.get(3)?,
+            commission_rate: row.get(4)?,
+            base_salary: row.get(5)?,
+            is_active: row.get(6)?,
+        });
+    }
+    Ok(out)
+}
+
+pub async fn add_employee(pool: &DbPool, input: CreateEmployeeInput) -> Result<Employee> {
+    let conn = pool.lock().await;
+    let rate = input.commission_rate.unwrap_or(0.0);
+    let salary = input.base_salary.unwrap_or(0.0);
+    conn.execute(
+        "INSERT INTO employees (name, role, phone, commission_rate, base_salary) VALUES (?, ?, ?, ?, ?)",
+        params![input.name.clone(), input.role.clone(), input.phone.clone(), rate, salary],
+    )
+    .await?;
+    let id = conn.last_insert_rowid();
+
+    // Keep mechanics table in sync so POS dropdown picks up new mechanic immediately
+    if input.role == "mechanic" {
+        conn.execute(
+            "INSERT INTO mechanics (name, is_active, employee_id) VALUES (?, 1, ?)",
+            params![input.name.clone(), id],
+        )
+        .await?;
+    }
+
+    Ok(Employee {
+        id,
+        name: input.name,
+        role: input.role,
+        phone: input.phone,
+        commission_rate: rate,
+        base_salary: salary,
+        is_active: 1,
+    })
+}
+
+pub async fn delete_employee(pool: &DbPool, id: i64) -> Result<()> {
+    let conn = pool.lock().await;
+    // Soft delete keeps historical transaction references intact
+    conn.execute("UPDATE employees SET is_active = 0 WHERE id = ?", params![id]).await?;
+    conn.execute("UPDATE mechanics SET is_active = 0 WHERE employee_id = ?", params![id]).await?;
+    Ok(())
+}
+
+pub async fn calculate_mechanic_commission(
+    pool: &DbPool,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> Result<Vec<MechanicCommissionSummary>> {
+    let conn = pool.lock().await;
+    let (date_filter, values) = super::date_range_filter("t", date_from, date_to);
+    let sql = format!(
+        r#"SELECT e.id, e.name, COUNT(td.id), COALESCE(SUM(td.total_price), 0),
+                  COALESCE(SUM(td.total_price * e.commission_rate / 100.0), 0)
+           FROM employees e
+           JOIN mechanics m ON m.employee_id = e.id
+           JOIN transactions t ON t.mechanic_id = m.id AND t.status = 'Lunas'
+           JOIN transaction_details td ON td.transaction_id = t.id AND td.item_type = 'layanan'
+           WHERE e.role = 'mechanic'{}
+           GROUP BY e.id, e.name ORDER BY e.name"#,
+        date_filter
+    );
+
+    let mut rows = conn.query(&sql, libsql::params_from_iter(values)).await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(MechanicCommissionSummary {
+            mechanic_id: row.get(0)?,
+            mechanic_name: row.get(1)?,
+            services_count: row.get(2)?,
+            total_services: row.get(3)?,
+            total_commission: row.get(4)?,
+        });
+    }
+    Ok(out)
+}
+
+pub async fn get_mechanic_monthly_summary(
+    pool: &DbPool,
+    employee_id: i64,
+    month: i32,
+    year: i32,
+) -> Result<MechanicMonthlySummary> {
+    let conn = pool.lock().await;
+
+    let mut emp_rows = conn
+        .query("SELECT name, commission_rate FROM employees WHERE id = ?", params![employee_id])
+        .await?;
+    let (name, rate): (String, f64) = if let Some(row) = emp_rows.next().await? {
+        (row.get(0)?, row.get(1)?)
+    } else {
+        return Err(anyhow::anyhow!("Employee tidak ditemukan"));
+    };
+
+    let mut rows = conn
+        .query(
+            r#"SELECT td.item_name, t.invoice_number, t.transaction_date, td.total_price
+               FROM transaction_details td
+               JOIN transactions t ON t.id = td.transaction_id
+               JOIN mechanics m ON m.id = t.mechanic_id
+               WHERE m.employee_id = ? AND td.item_type = 'layanan' AND t.status = 'Lunas'
+                 AND strftime('%m', t.transaction_date, 'localtime') = printf('%02d', ?)
+                 AND strftime('%Y', t.transaction_date, 'localtime') = ?
+               ORDER BY t.transaction_date DESC"#,
+            params![employee_id, month, year.to_string()],
+        )
+        .await?;
+
+    let mut lines = Vec::new();
+    let mut total_services = 0.0;
+    while let Some(row) = rows.next().await? {
+        let service_name: String = row.get(0)?;
+        let price: f64 = row.get(3)?;
+        total_services += price;
+        lines.push(CommissionLine {
+            service_name,
+            invoice_number: row.get(1)?,
+            transaction_date: row.get(2)?,
+            price,
+            commission: price * rate / 100.0,
+        });
+    }
+
+    let services_count = lines.len() as i64;
+    let total_commission = lines.iter().map(|l| l.commission).sum();
+
+    Ok(MechanicMonthlySummary {
+        mechanic_id: employee_id,
+        mechanic_name: name,
+        services_count,
+        total_services,
+        total_commission,
+        lines,
+    })
+}
+
+pub async fn record_commissions(
+    conn: &libsql::Connection,
+    transaction_id: i64,
+    mechanic_employee_id: i64,
+    layanan_items: &[(String, f64)],
+    rate: f64,
+) -> Result<()> {
+    for (name, price) in layanan_items {
+        conn.execute(
+            "INSERT INTO mechanic_commissions (transaction_id, mechanic_id, service_name, commission_amount) VALUES (?, ?, ?, ?)",
+            params![transaction_id, mechanic_employee_id, name.clone(), price * rate / 100.0],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,179 +329,4 @@ mod tests {
         let active: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(active, 0);
     }
-}
-
-pub async fn get_employees(pool: &DbPool) -> Result<Vec<Employee>> {
-    let conn = pool.lock().await;
-    let mut rows = conn
-        .query("SELECT id, name, role, phone, commission_rate, base_salary, is_active FROM employees ORDER BY name", ())
-        .await?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next().await? {
-        out.push(Employee {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            role: row.get(2)?,
-            phone: row.get(3)?,
-            commission_rate: row.get(4)?,
-            base_salary: row.get(5)?,
-            is_active: row.get(6)?,
-        });
-    }
-    Ok(out)
-}
-
-pub async fn add_employee(pool: &DbPool, input: CreateEmployeeInput) -> Result<Employee> {
-    let conn = pool.lock().await;
-    let rate = input.commission_rate.unwrap_or(0.0);
-    let salary = input.base_salary.unwrap_or(0.0);
-    conn.execute(
-        "INSERT INTO employees (name, role, phone, commission_rate, base_salary) VALUES (?, ?, ?, ?, ?)",
-        params![input.name.clone(), input.role.clone(), input.phone.clone(), rate, salary],
-    )
-    .await?;
-    let id = conn.last_insert_rowid();
-
-    // Keep mechanics table in sync so POS dropdown picks up new mechanic immediately
-    if input.role == "mechanic" {
-        conn.execute(
-            "INSERT INTO mechanics (name, is_active, employee_id) VALUES (?, 1, ?)",
-            params![input.name.clone(), id],
-        )
-        .await?;
-    }
-
-    Ok(Employee {
-        id,
-        name: input.name,
-        role: input.role,
-        phone: input.phone,
-        commission_rate: rate,
-        base_salary: salary,
-        is_active: 1,
-    })
-}
-
-pub async fn delete_employee(pool: &DbPool, id: i64) -> Result<()> {
-    let conn = pool.lock().await;
-    // Soft delete keeps historical transaction references intact
-    conn.execute("UPDATE employees SET is_active = 0 WHERE id = ?", params![id]).await?;
-    conn.execute("UPDATE mechanics SET is_active = 0 WHERE employee_id = ?", params![id]).await?;
-    Ok(())
-}
-
-pub async fn calculate_mechanic_commission(
-    pool: &DbPool,
-    date_from: Option<&str>,
-    date_to: Option<&str>,
-) -> Result<Vec<MechanicCommissionSummary>> {
-    let conn = pool.lock().await;
-    let mut sql = String::from(
-        r#"SELECT e.id, e.name, COUNT(td.id), COALESCE(SUM(td.total_price), 0),
-                  COALESCE(SUM(td.total_price * e.commission_rate / 100.0), 0)
-           FROM employees e
-           JOIN mechanics m ON m.employee_id = e.id
-           JOIN transactions t ON t.mechanic_id = m.id AND t.status = 'Lunas'
-           JOIN transaction_details td ON td.transaction_id = t.id AND td.item_type = 'layanan'
-           WHERE e.role = 'mechanic'"#,
-    );
-    let mut values: Vec<libsql::Value> = Vec::new();
-    if let Some(f) = date_from {
-        sql.push_str(" AND date(t.transaction_date, 'localtime') >= date(?)");
-        values.push(f.into());
-    }
-    if let Some(t) = date_to {
-        sql.push_str(" AND date(t.transaction_date, 'localtime') <= date(?)");
-        values.push(t.into());
-    }
-    sql.push_str(" GROUP BY e.id, e.name ORDER BY e.name");
-
-    let mut rows = conn.query(&sql, libsql::params_from_iter(values)).await?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next().await? {
-        out.push(MechanicCommissionSummary {
-            mechanic_id: row.get(0)?,
-            mechanic_name: row.get(1)?,
-            services_count: row.get(2)?,
-            total_services: row.get(3)?,
-            total_commission: row.get(4)?,
-        });
-    }
-    Ok(out)
-}
-
-pub async fn get_mechanic_monthly_summary(
-    pool: &DbPool,
-    employee_id: i64,
-    month: i32,
-    year: i32,
-) -> Result<MechanicMonthlySummary> {
-    let conn = pool.lock().await;
-
-    let mut emp_rows = conn
-        .query("SELECT name, commission_rate FROM employees WHERE id = ?", params![employee_id])
-        .await?;
-    let (name, rate): (String, f64) = if let Some(row) = emp_rows.next().await? {
-        (row.get(0)?, row.get(1)?)
-    } else {
-        return Err(anyhow::anyhow!("Employee tidak ditemukan"));
-    };
-
-    let mut rows = conn
-        .query(
-            r#"SELECT td.item_name, t.invoice_number, t.transaction_date, td.total_price
-               FROM transaction_details td
-               JOIN transactions t ON t.id = td.transaction_id
-               JOIN mechanics m ON m.id = t.mechanic_id
-               WHERE m.employee_id = ? AND td.item_type = 'layanan' AND t.status = 'Lunas'
-                 AND strftime('%m', t.transaction_date, 'localtime') = printf('%02d', ?)
-                 AND strftime('%Y', t.transaction_date, 'localtime') = ?
-               ORDER BY t.transaction_date DESC"#,
-            params![employee_id, month, year.to_string()],
-        )
-        .await?;
-
-    let mut lines = Vec::new();
-    let mut total_services = 0.0;
-    while let Some(row) = rows.next().await? {
-        let service_name: String = row.get(0)?;
-        let price: f64 = row.get(3)?;
-        total_services += price;
-        lines.push(CommissionLine {
-            service_name,
-            invoice_number: row.get(1)?,
-            transaction_date: row.get(2)?,
-            price,
-            commission: price * rate / 100.0,
-        });
-    }
-
-    let services_count = lines.len() as i64;
-    let total_commission = lines.iter().map(|l| l.commission).sum();
-
-    Ok(MechanicMonthlySummary {
-        mechanic_id: employee_id,
-        mechanic_name: name,
-        services_count,
-        total_services,
-        total_commission,
-        lines,
-    })
-}
-
-pub async fn record_commissions(
-    conn: &libsql::Connection,
-    transaction_id: i64,
-    mechanic_employee_id: i64,
-    layanan_items: &[(String, f64)],
-    rate: f64,
-) -> Result<()> {
-    for (name, price) in layanan_items {
-        conn.execute(
-            "INSERT INTO mechanic_commissions (transaction_id, mechanic_id, service_name, commission_amount) VALUES (?, ?, ?, ?)",
-            params![transaction_id, mechanic_employee_id, name.clone(), price * rate / 100.0],
-        )
-        .await?;
-    }
-    Ok(())
 }

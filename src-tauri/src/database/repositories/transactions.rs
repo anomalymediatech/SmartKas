@@ -106,7 +106,7 @@ pub async fn create_transaction(pool: &DbPool, input: CreateTransactionInput) ->
 
 async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInput) -> Result<TransactionOutput> {
     // Generate invoice number
-    let invoice_number = generate_invoice_number(&conn).await?;
+    let invoice_number = generate_invoice_number(conn).await?;
     
     // Insert transaction
     conn.execute(

@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useState } from 'react';
-import { X, LayoutDashboard, Package, History, Settings, Settings2, Wrench, ShoppingBag, ChevronRight, Users, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Package, History, Settings2, Wrench, ShoppingBag, Users, ShoppingCart } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from '@/components/ui';
+import { useAuth } from '@/context/AuthContext';
 
 interface MobileSidebarProps {
   isOpen: boolean;
@@ -11,16 +11,20 @@ interface MobileSidebarProps {
 }
 
 const navItems = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'pos', label: 'POS', icon: ShoppingBag },
-  { key: 'history', label: 'Riwayat', icon: History },
-  { key: 'inventory', label: 'Inventori', icon: Package },
-  { key: 'employees', label: 'Karyawan', icon: Users },
-  { key: 'purchases', label: 'Pembelian', icon: ShoppingCart },
-  { key: 'settings', label: 'Pengaturan', icon: Settings2 },
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: true },
+  { key: 'pos', label: 'POS', icon: ShoppingBag, adminOnly: false },
+  { key: 'history', label: 'Riwayat', icon: History, adminOnly: false },
+  { key: 'inventory', label: 'Inventori', icon: Package, adminOnly: false },
+  { key: 'employees', label: 'Karyawan', icon: Users, adminOnly: true },
+  { key: 'purchases', label: 'Pembelian', icon: ShoppingCart, adminOnly: true },
+  { key: 'settings', label: 'Pengaturan', icon: Settings2, adminOnly: false },
 ];
 
 export function MobileSidebar({ isOpen, onClose, currentPage, onNavigate }: MobileSidebarProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const visibleNavItems = navItems.filter((item) => isAdmin || !item.adminOnly);
+
   return (
     <Modal 
       isOpen={isOpen} 
@@ -40,7 +44,7 @@ export function MobileSidebar({ isOpen, onClose, currentPage, onNavigate }: Mobi
           </div>
         </div>
         <nav className="flex-1" role="navigation" aria-label="Navigasi mobile">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.key;
             return (

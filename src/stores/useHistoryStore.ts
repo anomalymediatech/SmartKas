@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { Transaction, TransactionDetail, HistoryFilters, SearchResult } from '@/types';
+import type { Transaction, TransactionDetail, HistoryFilters } from '@/types';
 import { dbGetTransactions, dbGetTransactionDetails, dbVoidTransaction } from '@/hooks/useDatabase';
 
 interface HistoryState {
@@ -47,7 +47,7 @@ export const useHistoryStore = create<HistoryState>()(
             totalCount: result.total,
             isLoading: false 
           });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat riwayat transaksi', isLoading: false });
         }
       },
@@ -69,7 +69,7 @@ export const useHistoryStore = create<HistoryState>()(
         try {
           const details = await dbGetTransactionDetails(transaction.id);
           set({ selectedDetails: details, isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat detail transaksi', isLoading: false });
         }
       },
@@ -82,7 +82,7 @@ export const useHistoryStore = create<HistoryState>()(
           await get().loadTransactions();
           set({ isLoading: false });
           return true;
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal membatalkan transaksi', isLoading: false });
           return false;
         }

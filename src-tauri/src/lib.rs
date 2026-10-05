@@ -4,6 +4,8 @@
 mod database;
 mod commands;
 mod escpos;
+mod auth;
+mod error;
 
 use database::init::init_database;
 
@@ -91,6 +93,11 @@ pub fn run() {
             commands::supplies::create_purchase_order,
             commands::supplies::receive_purchase_order,
             commands::supplies::get_purchase_orders,
+
+            // Auth
+            commands::auth::login,
+            commands::auth::logout,
+            commands::auth::check_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

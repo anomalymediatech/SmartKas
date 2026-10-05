@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
-import { Minus, Plus, CreditCard, ArrowRight, RotateCcw } from 'lucide-react';
-import { Button, Input } from '@/components/ui';
+import { CreditCard, ArrowRight, RotateCcw } from 'lucide-react';
+import { Button } from '@/components/ui';
 import { usePOSStore } from '@/stores';
 import { formatRupiah, parseRupiah } from '@/utils/currency';
 import { cn } from '@/utils/cn';

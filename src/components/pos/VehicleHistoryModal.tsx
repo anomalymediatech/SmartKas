@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import useSWR from 'swr';
 import { Modal } from '@/components/ui';
 import { dbGetVehicleHistory, dbGetVehicleReminder } from '@/hooks/useDatabase';

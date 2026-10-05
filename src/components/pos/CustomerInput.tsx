@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
-import { Search, Truck, User, Hash, UserCog } from 'lucide-react';
-import { Input, Select } from '@/components/ui';
+import { Truck, User, Hash, UserCog } from 'lucide-react';
 import { usePOSStore } from '@/stores';
 import { useAppStore } from '@/stores/useAppStore';
 import { VehicleHistoryModal } from './VehicleHistoryModal';
@@ -21,7 +20,6 @@ export function CustomerInput() {
     setCustomerNameSuggestions,
     setShowCustomerNameDropdown,
     setFocusRef,
-    setVehiclePlateFocus,
     setCustomerNameFocus,
     setQueueNumberFocus,
     setMechanicFocus,

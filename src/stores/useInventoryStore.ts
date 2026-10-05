@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { Sparepart, StockMovement, StockAdjustmentInput } from '@/types';
 import { dbGetSpareparts, dbSearchSpareparts, dbAdjustStock, dbGetStockMovements } from '@/hooks/useDatabase';
-import { useAppStore } from './useAppStore';
 
 interface InventoryState {
   spareparts: Sparepart[];
@@ -32,7 +31,7 @@ export const useInventoryStore = create<InventoryState>()(
         try {
           const spareparts = await dbGetSpareparts(false); // Include inactive
           set({ spareparts, isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat sparepart', isLoading: false });
         }
       },
@@ -61,7 +60,7 @@ export const useInventoryStore = create<InventoryState>()(
         try {
           const movements = await dbGetStockMovements(sparepartId);
           set({ stockMovements: movements, isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat riwayat stok', isLoading: false });
         }
       },

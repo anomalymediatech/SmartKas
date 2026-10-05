@@ -182,6 +182,23 @@ pub async fn get_upcoming_reminders(pool: &DbPool) -> Result<Vec<UpcomingReminde
     Ok(out)
 }
 
+
+pub async fn search_vehicle_plates(pool: &DbPool, query: &str) -> Result<Vec<String>> {
+    let conn = pool.lock().await;
+    let mut rows = conn
+        .query(
+            "SELECT DISTINCT vehicle_plate FROM transactions WHERE UPPER(vehicle_plate) LIKE UPPER(?) ORDER BY vehicle_plate LIMIT 10",
+            params![format!("%{}%", query.trim())],
+        )
+        .await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(row.get(0)?);
+    }
+    Ok(out)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,19 +299,4 @@ mod tests {
         let plates = search_vehicle_plates(&pool, "B 12").await.unwrap();
         assert_eq!(plates, vec!["B 1234 ABC".to_string()]);
     }
-}
-
-pub async fn search_vehicle_plates(pool: &DbPool, query: &str) -> Result<Vec<String>> {
-    let conn = pool.lock().await;
-    let mut rows = conn
-        .query(
-            "SELECT DISTINCT vehicle_plate FROM transactions WHERE UPPER(vehicle_plate) LIKE UPPER(?) ORDER BY vehicle_plate LIMIT 10",
-            params![format!("%{}%", query.trim())],
-        )
-        .await?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next().await? {
-        out.push(row.get(0)?);
-    }
-    Ok(out)
 }

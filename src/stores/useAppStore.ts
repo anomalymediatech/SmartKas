@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools, persist } from 'zustand/middleware';
+import { devtools } from 'zustand/middleware';
 import type { Settings, Mechanic, Sparepart, Service } from '@/types';
 import { 
   dbGetSettings, 
@@ -21,7 +21,6 @@ import {
   dbUpdateService,
   dbDeleteService,
 } from '@/hooks/useDatabase';
-import { useToast } from '@/hooks/useToast';
 
 interface AppState {
   settings: Settings | null;
@@ -100,7 +99,7 @@ export const useAppStore = create<AppState>()(
         try {
           const mechanics = await dbGetMechanics(activeOnly);
           set({ mechanics, isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat daftar mekanik', isLoading: false });
         }
       },
@@ -165,7 +164,7 @@ export const useAppStore = create<AppState>()(
         try {
           const spareparts = await dbGetSpareparts(activeOnly);
           set({ spareparts, isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat sparepart', isLoading: false });
         }
       },
@@ -235,7 +234,7 @@ export const useAppStore = create<AppState>()(
         try {
           const services = await dbGetServices(activeOnly);
           set({ services, isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal memuat layanan', isLoading: false });
         }
       },
@@ -294,7 +293,7 @@ export const useAppStore = create<AppState>()(
             get().loadServices(),
           ]);
           set({ isLoading: false });
-        } catch (err) {
+        } catch {
           set({ error: 'Gagal menginisialisasi aplikasi', isLoading: false });
         }
       },

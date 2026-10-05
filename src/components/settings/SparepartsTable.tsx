@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Edit, Trash2, Package, RotateCcw } from 'lucide-react';
+import { Plus, Edit, Trash2, Package } from 'lucide-react';
 import { Button, Input, Modal, Table, TablePagination, Badge } from '@/components/ui';
 import { useAppStore } from '@/stores';
 import { useToast } from '@/hooks/useToast';
@@ -7,7 +7,7 @@ import { formatRupiah, parseRupiah } from '@/utils/currency';
 import type { Sparepart } from '@/types';
 
 export function SparepartsTable() {
-  const { spareparts, loadSpareparts, addSparepart, updateSparepart, deleteSparepart, isLoading } = useAppStore();
+  const { spareparts, addSparepart, updateSparepart, deleteSparepart, isLoading } = useAppStore();
   const { success, error } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,7 +58,7 @@ export function SparepartsTable() {
         success('Berhasil', 'Sparepart ditambahkan');
       }
       setIsModalOpen(false);
-    } catch (err) {
+    } catch {
       error('Gagal', editingPart ? 'Gagal memperbarui sparepart' : 'Gagal menambah sparepart');
     }
   };
@@ -72,7 +72,7 @@ export function SparepartsTable() {
       await deleteSparepart(id);
       success('Berhasil', 'Sparepart dihapus');
       setDeleteConfirmId(null);
-    } catch (err) {
+    } catch {
       error('Gagal', 'Gagal menghapus sparepart');
     }
   };

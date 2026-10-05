@@ -111,23 +111,16 @@ pub async fn get_mechanic_performance(
     date_to: Option<&str>,
 ) -> Result<Vec<MechanicPerformance>> {
     let conn = pool.lock().await;
-    let mut sql = String::from(
+    let (date_filter, params_vec) = super::date_range_filter("t", date_from, date_to);
+    let sql = format!(
         r#"SELECT m.name, COUNT(td.id)
            FROM transactions t
            JOIN mechanics m ON m.id = t.mechanic_id
            JOIN transaction_details td ON td.transaction_id = t.id AND td.item_type = 'layanan'
-           WHERE t.status = 'Lunas'"#,
+           WHERE t.status = 'Lunas'{}"#,
+        date_filter
     );
-    let mut params_vec: Vec<libsql::Value> = Vec::new();
-    if let Some(from) = date_from {
-        sql.push_str(" AND date(t.transaction_date, 'localtime') >= date(?)");
-        params_vec.push(from.into());
-    }
-    if let Some(to) = date_to {
-        sql.push_str(" AND date(t.transaction_date, 'localtime') <= date(?)");
-        params_vec.push(to.into());
-    }
-    sql.push_str(" GROUP BY m.id, m.name ORDER BY COUNT(td.id) DESC");
+    let sql = format!("{} GROUP BY m.id, m.name ORDER BY COUNT(td.id) DESC", sql);
 
     let mut rows = conn.query(&sql, libsql::params_from_iter(params_vec)).await?;
     let mut items = Vec::new();
@@ -139,6 +132,29 @@ pub async fn get_mechanic_performance(
     }
     Ok(items)
 }
+
+
+pub async fn get_sales_trend(pool: &DbPool, days: i32) -> Result<Vec<SalesTrendPoint>> {
+    let conn = pool.lock().await;
+    let mut rows = conn
+        .query(
+            r#"SELECT date(transaction_date, 'localtime') AS d, COALESCE(SUM(total_amount), 0)
+               FROM transactions
+               WHERE status = 'Lunas' AND date(transaction_date, 'localtime') >= date('now', 'localtime', ?)
+               GROUP BY d ORDER BY d ASC"#,
+            params![format!("-{} days", days.saturating_sub(1))],
+        )
+        .await?;
+    let mut points = Vec::new();
+    while let Some(row) = rows.next().await? {
+        points.push(SalesTrendPoint {
+            date: row.get(0)?,
+            total_amount: row.get(1)?,
+        });
+    }
+    Ok(points)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -205,25 +221,4 @@ mod tests {
         let pts = get_sales_trend(&pool, 7).await.unwrap();
         assert!(pts.iter().all(|p| p.total_amount >= 0.0));
     }
-}
-
-pub async fn get_sales_trend(pool: &DbPool, days: i32) -> Result<Vec<SalesTrendPoint>> {
-    let conn = pool.lock().await;
-    let mut rows = conn
-        .query(
-            r#"SELECT date(transaction_date, 'localtime') AS d, COALESCE(SUM(total_amount), 0)
-               FROM transactions
-               WHERE status = 'Lunas' AND date(transaction_date, 'localtime') >= date('now', 'localtime', ?)
-               GROUP BY d ORDER BY d ASC"#,
-            params![format!("-{} days", days.saturating_sub(1))],
-        )
-        .await?;
-    let mut points = Vec::new();
-    while let Some(row) = rows.next().await? {
-        points.push(SalesTrendPoint {
-            date: row.get(0)?,
-            total_amount: row.get(1)?,
-        });
-    }
-    Ok(points)
 }

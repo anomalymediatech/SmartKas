@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Plus, Minus, Package, RotateCcw } from 'lucide-react';
+import { Plus, Minus } from 'lucide-react';
 import { Button, Input, Textarea, Modal, Badge } from '@/components/ui';
 import { useAppStore } from '@/stores';
 import { useToast } from '@/hooks/useToast';
-import { formatRupiah } from '@/utils/currency';
 import type { Sparepart } from '@/types';
 
 interface StockAdjustmentModalProps {
@@ -54,7 +53,7 @@ export function StockAdjustmentModal({ isOpen, onClose, sparepart }: StockAdjust
       await adjustStock(sparepart.id, delta, reason.trim());
       success('Berhasil', `Stok ${adjustmentType === 'in' ? 'ditambah' : 'dikurangi'} ${qty}`);
       onClose();
-    } catch (err) {
+    } catch {
       error('Gagal', 'Gagal menyesuaikan stok');
     } finally {
       setIsSubmitting(false);

@@ -1,8 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { CartItem, Mechanic } from '@/types';
-import { dbCreateTransaction, dbGetSettings } from '@/hooks/useDatabase';
-import { formatRupiah } from '@/utils/currency';
+import { dbCreateTransaction } from '@/hooks/useDatabase';
 
 interface POSState {
   // Customer/Vehicle Input
@@ -281,8 +280,6 @@ export const usePOSStore = create<POSState>()(
         set({ isProcessing: true });
 
         try {
-          const settings = await dbGetSettings();
-          const invoiceNumber = await generateInvoiceNumber();
           
           const details = [
             ...state.layananItems.map((item) => ({
@@ -346,12 +343,3 @@ export const usePOSStore = create<POSState>()(
   )
 );
 
-async function generateInvoiceNumber(): Promise<string> {
-  const today = new Date();
-  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-  
-  // In a real implementation, this would query the backend
-  // For now, we'll use a timestamp-based approach
-  const sequence = Date.now() % 10000;
-  return `INV-${dateStr}-${sequence.toString().padStart(4, '0')}`;
-}

@@ -12,19 +12,22 @@ import PurchasesPage from './pages/Purchases';
 import { useAppStore } from './stores';
 import { dbPrintReceipt } from './hooks/useDatabase';
 import { useToastStore } from './hooks/useToast';
+import { useAuth } from './context/AuthContext';
+import LoginPage from './pages/Login';
 
 const pages = [
-  { key: 'dashboard', label: 'Dashboard', component: DashboardPage },
-  { key: 'pos', label: 'POS', component: POSPage },
-  { key: 'history', label: 'Riwayat', component: HistoryPage },
-  { key: 'inventory', label: 'Inventori', component: InventoryPage },
-  { key: 'employees', label: 'Karyawan', component: EmployeesPage },
-  { key: 'purchases', label: 'Pembelian', component: PurchasesPage },
-  { key: 'settings', label: 'Pengaturan', component: SettingsPage },
+  { key: 'dashboard', label: 'Dashboard', component: DashboardPage, adminOnly: true },
+  { key: 'pos', label: 'POS', component: POSPage, adminOnly: false },
+  { key: 'history', label: 'Riwayat', component: HistoryPage, adminOnly: false },
+  { key: 'inventory', label: 'Inventori', component: InventoryPage, adminOnly: false },
+  { key: 'employees', label: 'Karyawan', component: EmployeesPage, adminOnly: true },
+  { key: 'purchases', label: 'Pembelian', component: PurchasesPage, adminOnly: true },
+  { key: 'settings', label: 'Pengaturan', component: SettingsPage, adminOnly: false },
 ];
 
 function App() {
   console.log('✅ App Component Rendered');
+  const { user, isLoading: authLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState('pos');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { initializeApp } = useAppStore();
@@ -39,8 +42,6 @@ function App() {
     return () => window.removeEventListener('mechanics-changed', handler);
   }, []);
 
-  const pageConfig = pages.find(p => p.key === currentPage) || pages[0];
-  const CurrentComponent = pageConfig.component;
   const { settings } = useAppStore();
 
   useEffect(() => {
@@ -57,6 +58,23 @@ function App() {
     window.addEventListener('print-receipt', handler);
     return () => window.removeEventListener('print-receipt', handler);
   }, [settings]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-industrial-50">
+        <div className="animate-spin h-8 w-8 border-4 border-accent-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  const isAdmin = user.role === 'admin';
+  const visiblePages = pages.filter((p) => isAdmin || !p.adminOnly);
+  const pageConfig = visiblePages.find((p) => p.key === currentPage) || visiblePages[0];
+  const CurrentComponent = pageConfig.component;
 
   return (
     <>

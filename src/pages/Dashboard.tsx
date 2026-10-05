@@ -70,7 +70,7 @@ export default function DashboardPage() {
             <p className="text-sm text-industrial-400 py-10 text-center">Belum ada layanan tercatat</p>
           ) : (
             <ul className="divide-y divide-industrial-100">
-              {mechanics.map((m, i) => (
+              {mechanics.map((m) => (
                 <li key={m.mechanic_name} className="flex items-center justify-between py-2.5">
                   <span className="flex items-center gap-2 text-industrial-700">
                     <Wrench className="h-4 w-4 text-industrial-400" />

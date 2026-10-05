@@ -1,13 +1,15 @@
+use crate::error::AppError;
 use crate::database::{get_db_connection, get_db_path, init::init_database as run_init_database};
 use anyhow::Result;
 
 #[tauri::command]
-pub async fn init_database(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn init_database(app_handle: tauri::AppHandle) -> Result<(), AppError> {
     run_init_database(&app_handle).await
 }
 
 #[tauri::command]
-pub async fn backup_database(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
+pub async fn backup_database(app_handle: tauri::AppHandle, token: String, path: String) -> Result<(), AppError> {
+    crate::commands::auth::require_admin(&app_handle, &token).await?;
     let pool = get_db_connection(&app_handle).await?;
 
     // VACUUM INTO performs a consistent online backup of the SQLite database
@@ -23,7 +25,8 @@ pub async fn backup_database(app_handle: tauri::AppHandle, path: String) -> Resu
 }
 
 #[tauri::command]
-pub async fn restore_database(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
+pub async fn restore_database(app_handle: tauri::AppHandle, token: String, path: String) -> Result<(), AppError> {
+    crate::commands::auth::require_admin(&app_handle, &token).await?;
     let db_path = get_db_path(&app_handle)?;
 
     if !std::path::Path::new(&path).exists() {
