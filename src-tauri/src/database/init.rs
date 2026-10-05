@@ -1,6 +1,6 @@
 use super::get_db_connection;
 
-const SCHEMA_SQL: &str = r#"
+pub(crate) const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS mechanics (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     name TEXT NOT NULL, 
@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY,
     shop_name TEXT,
     shop_address TEXT,
-    receipt_footer TEXT
+    receipt_footer TEXT,
+    printer_name TEXT,
+    paper_width INTEGER DEFAULT 80
 );
 
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -109,6 +111,10 @@ pub async fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> 
     let pool = get_db_connection(app_handle).await?;
     let conn = pool.lock().await;
     
+    // Apply migrations for databases created by older versions
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN printer_name TEXT", ()).await;
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN paper_width INTEGER DEFAULT 80", ()).await;
+
     // Execute schema
     conn.execute_batch(SCHEMA_SQL)
         .await

@@ -1,4 +1,3 @@
-import { type ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 import { useToastStore } from '@/hooks/useToast';
 import { cn } from '@/utils/cn';

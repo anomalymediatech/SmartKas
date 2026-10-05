@@ -1,8 +1,10 @@
 export interface Settings {
   id: number;
-  shop_name: string;
-  shop_address: string;
-  receipt_footer: string;
+  shop_name: string | null;
+  shop_address: string | null;
+  receipt_footer: string | null;
+  printer_name: string | null;
+  paper_width: number | null;
 }
 
 export interface Mechanic {
@@ -57,8 +59,8 @@ export interface TransactionDetail {
 
 export interface CreateTransactionInput {
   vehicle_plate: string;
-  customer_name: string;
-  queue_number: number;
+  customer_name: string | null;
+  queue_number: number | null;
   mechanic_id: number | null;
   cashier_name: string;
   subtotal: number;
@@ -76,6 +78,8 @@ export interface CreateTransactionDetailInput {
   quantity: number;
   unit_price: number;
   total_price: number;
+  sparepart_id?: number | null;
+  service_id?: number | null;
 }
 
 export interface TransactionOutput {

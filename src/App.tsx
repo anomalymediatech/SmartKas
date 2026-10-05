@@ -7,6 +7,8 @@ import SettingsPage from './pages/Settings';
 import HistoryPage from './pages/History';
 import InventoryPage from './pages/Inventory';
 import { useAppStore } from './stores';
+import { dbPrintReceipt } from './hooks/useDatabase';
+import { useToastStore } from './hooks/useToast';
 
 const pages = [
   { key: 'pos', label: 'POS', component: POSPage },
@@ -27,6 +29,22 @@ function App() {
 
   const pageConfig = pages.find(p => p.key === currentPage) || pages[0];
   const CurrentComponent = pageConfig.component;
+  const { settings } = useAppStore();
+
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const transactionId = (e as CustomEvent<number>).detail;
+      try {
+        await dbPrintReceipt(transactionId, settings?.printer_name ?? undefined, settings?.paper_width ?? 80);
+        useToastStore.getState().addToast({ type: 'success', title: 'Berhasil', message: 'Struk dikirim ke printer' });
+      } catch (err) {
+        console.error('Print failed:', err);
+        useToastStore.getState().addToast({ type: 'error', title: 'Gagal Cetak', message: err instanceof Error ? err.message : String(err), duration: 5000 });
+      }
+    };
+    window.addEventListener('print-receipt', handler);
+    return () => window.removeEventListener('print-receipt', handler);
+  }, [settings]);
 
   return (
     <>

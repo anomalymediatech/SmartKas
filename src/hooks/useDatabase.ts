@@ -9,7 +9,9 @@ import type {
   StockMovement,
   HistoryFilters,
   SearchResult,
-  PrinterInfo
+  PrinterInfo,
+  CreateTransactionInput,
+  TransactionOutput,
 } from '@/types';
 
 export async function dbInit(): Promise<void> {
@@ -88,7 +90,7 @@ export async function dbDeleteService(id: number): Promise<void> {
   await invoke('delete_service', { id });
 }
 
-export async function dbCreateTransaction(input: any): Promise<any> {
+export async function dbCreateTransaction(input: CreateTransactionInput): Promise<TransactionOutput> {
   return await invoke('create_transaction', { input });
 }
 

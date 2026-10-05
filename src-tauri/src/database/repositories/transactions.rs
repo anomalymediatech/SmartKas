@@ -89,9 +89,22 @@ pub struct SearchResult<T> {
 pub async fn create_transaction(pool: &DbPool, input: CreateTransactionInput) -> Result<TransactionOutput> {
     let conn = pool.lock().await;
     
-    // Start transaction
     conn.execute("BEGIN IMMEDIATE TRANSACTION", ()).await?;
-    
+
+    let result = create_transaction_inner(&conn, input).await;
+    match result {
+        Ok(out) => {
+            conn.execute("COMMIT", ()).await?;
+            Ok(out)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            Err(e)
+        }
+    }
+}
+
+async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInput) -> Result<TransactionOutput> {
     // Generate invoice number
     let invoice_number = generate_invoice_number(&conn).await?;
     
@@ -162,7 +175,6 @@ pub async fn create_transaction(pool: &DbPool, input: CreateTransactionInput) ->
                     let new_stock = current_stock - detail.quantity;
 
                     if new_stock < 0 {
-                        conn.execute("ROLLBACK", ()).await?;
                         return Err(anyhow::anyhow!("Insufficient stock for {}", detail.item_name));
                     }
 
@@ -181,13 +193,116 @@ pub async fn create_transaction(pool: &DbPool, input: CreateTransactionInput) ->
         }
     }
     
-    conn.execute("COMMIT", ()).await?;
-    
     Ok(TransactionOutput {
         id: transaction_id,
         invoice_number,
         transaction_date: Utc::now().to_rfc3339(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::init::SCHEMA_SQL;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    async fn setup_pool() -> DbPool {
+        let dir = std::env::temp_dir().join(format!("smartkas-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_url = format!("file:{}", dir.join("test.db").to_string_lossy());
+        let db = libsql::Builder::new_local(db_url).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        conn.execute_batch(SCHEMA_SQL).await.unwrap();
+        conn.execute(
+            "INSERT INTO spareparts (name, buy_price, sell_price, stock) VALUES ('Roller', 50000, 95000, 5)",
+            (),
+        ).await.unwrap();
+        Arc::new(Mutex::new(conn))
+    }
+
+    fn sale_input() -> CreateTransactionInput {
+        CreateTransactionInput {
+            vehicle_plate: "B 1234 ABC".into(),
+            customer_name: None,
+            queue_number: 1,
+            mechanic_id: None,
+            cashier_name: "Admin".into(),
+            subtotal: 125000.0,
+            discount: 0.0,
+            total_amount: 125000.0,
+            paid_amount: 125000.0,
+            change_amount: 0.0,
+            payment_method: "Cash".into(),
+            details: vec![
+                CreateTransactionDetailInput {
+                    item_type: "layanan".into(),
+                    item_name: "Ganti Kampas Rem".into(),
+                    quantity: 1,
+                    unit_price: 30000.0,
+                    total_price: 30000.0,
+                    sparepart_id: None,
+                },
+                CreateTransactionDetailInput {
+                    item_type: "sparepart".into(),
+                    item_name: "Roller".into(),
+                    quantity: 1,
+                    unit_price: 95000.0,
+                    total_price: 95000.0,
+                    sparepart_id: Some(1),
+                },
+            ],
+        }
+    }
+
+    async fn stock_of(pool: &DbPool) -> i32 {
+        let conn = pool.lock().await;
+        let mut rows = conn.query("SELECT stock FROM spareparts WHERE id = 1", ()).await.unwrap();
+        rows.next().await.unwrap().unwrap().get(0).unwrap()
+    }
+
+    #[tokio::test]
+    async fn void_restores_stock_and_marks_batal() {
+        let pool = setup_pool().await;
+        assert_eq!(stock_of(&pool).await, 5);
+
+        let out = create_transaction(&pool, sale_input()).await.unwrap();
+        assert_eq!(stock_of(&pool).await, 4);
+
+        void_transaction(&pool, out.id).await.unwrap();
+        assert_eq!(stock_of(&pool).await, 5);
+
+        let conn = pool.lock().await;
+        let mut rows = conn.query("SELECT status FROM transactions WHERE id = ?", params![out.id]).await.unwrap();
+        let status: String = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(status, "Batal");
+
+        let mut rows = conn.query("SELECT COUNT(*) FROM stock_movements WHERE movement_type = 'void_restore'", ()).await.unwrap();
+        let n: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[tokio::test]
+    async fn double_void_fails_and_keeps_stock() {
+        let pool = setup_pool().await;
+        let out = create_transaction(&pool, sale_input()).await.unwrap();
+        void_transaction(&pool, out.id).await.unwrap();
+        assert!(void_transaction(&pool, out.id).await.is_err());
+        assert_eq!(stock_of(&pool).await, 5);
+    }
+
+    #[tokio::test]
+    async fn insufficient_stock_rolls_back_everything() {
+        let pool = setup_pool().await;
+        let mut input = sale_input();
+        input.details[1].quantity = 99;
+        assert!(create_transaction(&pool, input).await.is_err());
+        assert_eq!(stock_of(&pool).await, 5);
+        let conn = pool.lock().await;
+        let mut rows = conn.query("SELECT COUNT(*) FROM transactions", ()).await.unwrap();
+        let n: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(n, 0);
+    }
 }
 
 async fn generate_invoice_number(conn: &Connection) -> Result<String> {
@@ -210,52 +325,67 @@ pub async fn void_transaction(pool: &DbPool, transaction_id: i64) -> Result<()> 
     let conn = pool.lock().await;
     
     conn.execute("BEGIN IMMEDIATE TRANSACTION", ()).await?;
-    
-    // Get transaction details for spareparts
-    let mut rows = conn.query(
-        "SELECT item_type, item_name, quantity FROM transaction_details WHERE transaction_id = ?",
-        params![transaction_id],
-    ).await?;
-    
-    while let Some(row) = rows.next().await? {
-        let item_type: String = row.get(0)?;
-        let item_name: String = row.get(1)?;
-        let quantity: i32 = row.get(2)?;
-        
-        if item_type == "sparepart" {
-            // Get sparepart
-            let mut part_rows = conn.query(
-                "SELECT id, stock FROM spareparts WHERE name = ?",
-                params![item_name],
-            ).await?;
-            
-            if let Some(part_row) = part_rows.next().await? {
-                let sparepart_id: i64 = part_row.get(0)?;
-                let current_stock: i32 = part_row.get(1)?;
-                let new_stock = current_stock + quantity;
-                
-                conn.execute(
-                    "UPDATE spareparts SET stock = ? WHERE id = ?",
-                    params![new_stock, sparepart_id],
+
+    let result = void_transaction_inner(&conn, transaction_id).await;
+    match result {
+        Ok(()) => {
+            conn.execute("COMMIT", ()).await?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            Err(e)
+        }
+    }
+}
+
+async fn void_transaction_inner(conn: &Connection, transaction_id: i64) -> Result<()> {
+    // Collect sparepart lines first so we don't mutate while a cursor is open
+    let mut sparepart_lines: Vec<(i64, i32)> = Vec::new();
+    {
+        let mut rows = conn.query(
+            "SELECT item_type, item_name, quantity FROM transaction_details WHERE transaction_id = ?",
+            params![transaction_id],
+        ).await?;
+        while let Some(row) = rows.next().await? {
+            let item_type: String = row.get(0)?;
+            let item_name: String = row.get(1)?;
+            let quantity: i32 = row.get(2)?;
+            if item_type == "sparepart" {
+                let mut part_rows = conn.query(
+                    "SELECT id FROM spareparts WHERE name = ?",
+                    params![item_name],
                 ).await?;
-                
-                // Record void restoration movement
-                conn.execute(
-                    "INSERT INTO stock_movements (sparepart_id, movement_type, quantity, reference_type, reference_id, reason) VALUES (?, 'void_restore', ?, 'void', ?, 'Pembatalan transaksi')",
-                    params![sparepart_id, quantity, transaction_id],
-                ).await?;
+                if let Some(part_row) = part_rows.next().await? {
+                    let sparepart_id: i64 = part_row.get(0)?;
+                    sparepart_lines.push((sparepart_id, quantity));
+                }
             }
         }
     }
-    
-    // Update transaction status
-    conn.execute(
-        "UPDATE transactions SET status = 'Batal' WHERE id = ?",
+
+    for (sparepart_id, quantity) in sparepart_lines {
+        conn.execute(
+            "UPDATE spareparts SET stock = stock + ? WHERE id = ?",
+            params![quantity, sparepart_id],
+        ).await?;
+
+        conn.execute(
+            "INSERT INTO stock_movements (sparepart_id, movement_type, quantity, reference_type, reference_id, reason) VALUES (?, 'void_restore', ?, 'void', ?, 'Pembatalan transaksi')",
+            params![sparepart_id, quantity, transaction_id],
+        ).await?;
+    }
+
+
+    // Update transaction status (guard against double-void)
+    let updated = conn.execute(
+        "UPDATE transactions SET status = 'Batal' WHERE id = ? AND status != 'Batal'",
         params![transaction_id],
     ).await?;
-    
-    conn.execute("COMMIT", ()).await?;
-    
+    if updated == 0 {
+        return Err(anyhow::anyhow!("Transaksi tidak ditemukan atau sudah dibatalkan"));
+    }
+
     Ok(())
 }
 

@@ -8,24 +8,35 @@ pub struct Settings {
     pub shop_name: Option<String>,
     pub shop_address: Option<String>,
     pub receipt_footer: Option<String>,
+    pub printer_name: Option<String>,
+    pub paper_width: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct UpdateSettingsInput {
+    #[serde(default)]
     pub shop_name: Option<String>,
+    #[serde(default)]
     pub shop_address: Option<String>,
+    #[serde(default)]
     pub receipt_footer: Option<String>,
+    #[serde(default)]
+    pub printer_name: Option<String>,
+    #[serde(default)]
+    pub paper_width: Option<i64>,
 }
 
 pub async fn get_settings(pool: &DbPool) -> Result<Option<Settings>> {
     let conn = pool.lock().await;
-    let mut rows = conn.query("SELECT id, shop_name, shop_address, receipt_footer FROM settings WHERE id = 1", ()).await?;
+    let mut rows = conn.query("SELECT id, shop_name, shop_address, receipt_footer, printer_name, paper_width FROM settings WHERE id = 1", ()).await?;
     if let Some(row) = rows.next().await? {
         Ok(Some(Settings {
             id: row.get(0)?,
             shop_name: row.get(1)?,
             shop_address: row.get(2)?,
             receipt_footer: row.get(3)?,
+            printer_name: row.get(4)?,
+            paper_width: row.get(5)?,
         }))
     } else {
         Ok(None)
@@ -49,6 +60,14 @@ pub async fn update_settings(pool: &DbPool, input: UpdateSettingsInput) -> Resul
     if let Some(f) = input.receipt_footer {
         updates.push("receipt_footer = ?");
         params.push(f.into());
+    }
+    if let Some(p) = input.printer_name {
+        updates.push("printer_name = ?");
+        params.push(p.into());
+    }
+    if let Some(w) = input.paper_width {
+        updates.push("paper_width = ?");
+        params.push(w.into());
     }
     
     if !updates.is_empty() {

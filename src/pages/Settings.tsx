@@ -5,7 +5,8 @@ import { MechanicsTable } from '@/components/settings/MechanicsTable';
 import { SparepartsTable } from '@/components/settings/SparepartsTable';
 import { ServicesTable } from '@/components/settings/ServicesTable';
 import { useAppStore } from '@/stores';
-import { LayoutDashboard, Users, Package, Wrench, Settings as SettingsIcon } from 'lucide-react';
+import { DatabaseBackup } from '@/components/settings/DatabaseBackup';
+import { LayoutDashboard, Users, Package, Wrench } from 'lucide-react';
 
 const tabs = [
   { key: 'shop', label: 'Toko', icon: <LayoutDashboard className="h-4 w-4" /> },
@@ -34,7 +35,10 @@ export default function SettingsPage() {
 
       <div className="mt-6">
         <TabPanel tabKey="shop" activeTab={activeTab}>
-          <ShopSettingsForm />
+          <div className="space-y-6">
+            <ShopSettingsForm />
+            <DatabaseBackup />
+          </div>
         </TabPanel>
         <TabPanel tabKey="mechanics" activeTab={activeTab}>
           <MechanicsTable />

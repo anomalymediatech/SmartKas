@@ -77,8 +77,7 @@ pub fn build_receipt_bytes(
         }
         
         let layanan_total: f64 = layanan_items.iter().map(|d| d.total_price).sum();
-        buf.extend(encode_text(&format!("{:>width$}", format_currency(layanan_total), width = chars_per_line)));
-        buf.extend(encode_text(&format!("Total Layanan: {:>width$}", "", width = chars_per_line - 14)));
+        buf.extend(encode_text(&format!("Total Layanan: {:>width$}", format_currency(layanan_total), width = chars_per_line - 14)));
         buf.extend(feed_lines(1));
     }
     
@@ -144,6 +143,70 @@ pub fn build_receipt_bytes(
     buf.extend(cut_paper(true));
     
     buf
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> (Transaction, Vec<TransactionDetail>, Settings) {
+        let tx = Transaction {
+            id: 1,
+            invoice_number: "INV-20261005-0001".into(),
+            queue_number: Some(3),
+            customer_name: Some("Bapak Andi".into()),
+            vehicle_plate: "B 1234 ABC".into(),
+            mechanic_id: None,
+            cashier_name: "Admin".into(),
+            subtotal: 125000.0,
+            discount: 0.0,
+            total_amount: 125000.0,
+            paid_amount: 130000.0,
+            change_amount: 5000.0,
+            payment_method: "Cash".into(),
+            status: "Lunas".into(),
+            transaction_date: "2026-10-05T10:30:00+07:00".into(),
+            mechanic_name: None,
+        };
+        let details = vec![
+            TransactionDetail { id: 1, transaction_id: 1, item_type: "layanan".into(), item_name: "Ganti Kampas Rem".into(), quantity: 1, unit_price: 30000.0, total_price: 30000.0 },
+            TransactionDetail { id: 2, transaction_id: 1, item_type: "sparepart".into(), item_name: "Roller".into(), quantity: 1, unit_price: 95000.0, total_price: 95000.0 },
+        ];
+        let settings = Settings {
+            id: 1,
+            shop_name: Some("KASMINI BENGKEL".into()),
+            shop_address: Some("Jl. Raya No. 123".into()),
+            receipt_footer: Some("Terima kasih sudah berbelanja".into()),
+            printer_name: None,
+            paper_width: Some(80),
+        };
+        (tx, details, settings)
+    }
+
+    #[test]
+    fn receipt_has_layers_before_sparepart_and_dashed_separators() {
+        let (tx, details, settings) = sample();
+        let bytes = build_receipt_bytes(&tx, &details, &settings, 80);
+        let text = String::from_utf8_lossy(&bytes);
+
+        let layanan_pos = text.find("LAYANAN").expect("LAYANAN header missing");
+        let spare_pos = text.find("SPARE PART").expect("SPARE PART header missing");
+        assert!(layanan_pos < spare_pos, "LAYANAN must appear before SPARE PART");
+
+        assert!(text.contains("--------"), "dashed separators missing");
+        assert!(text.contains("Ganti Kampas Rem"));
+        assert!(text.contains("Roller"));
+        assert!(text.contains("Terima kasih sudah berbelanja"));
+        assert!(text.contains("Rp 125.000"));
+        assert!(!text.contains("Total Layanan:\n"), "layanan total label must be on same line as value");
+    }
+
+    #[test]
+    fn receipt_uses_utf8_for_indonesian_text() {
+        let (tx, details, settings) = sample();
+        let bytes = build_receipt_bytes(&tx, &details, &settings, 80);
+        assert!(String::from_utf8(bytes).is_ok());
+    }
 }
 
 fn format_item_line(item: &TransactionDetail, width: usize) -> Vec<u8> {
@@ -238,6 +301,8 @@ impl Default for Settings {
             shop_name: Some("KASMINI BENGKEL".to_string()),
             shop_address: Some("Jl. Raya No. 123, Jakarta".to_string()),
             receipt_footer: Some("Service > 7x Gratis 1x. Barang yang sudah dibeli tidak dapat dikembalikan.".to_string()),
+            printer_name: None,
+            paper_width: Some(80),
         }
     }
 }

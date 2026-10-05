@@ -1,4 +1,4 @@
-import { type ReactNode, forwardRef, type HTMLAttributes } from 'react';
+import { type ReactNode } from 'react';
 import { cn } from '@/utils/cn';
 
 interface Column<T> {
@@ -88,7 +88,7 @@ export function Table<T>({
                     key={column.key}
                     className={cn('px-4 py-3 text-industrial-900', column.className)}
                   >
-                    {column.render ? column.render(row, rowIndex) : (row as any)[column.key]}
+                    {column.render ? column.render(row, rowIndex) : String((row as Record<string, unknown>)[column.key] ?? '')}
                   </td>
                 ))}
               </tr>

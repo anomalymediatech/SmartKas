@@ -25,6 +25,9 @@ export function POSView() {
     if (result.success) {
       success('Berhasil', `Transaksi ${result.invoiceNumber} berhasil disimpan`);
       resetPOS();
+      if (result.transactionId) {
+        window.dispatchEvent(new CustomEvent('print-receipt', { detail: result.transactionId }));
+      }
     } else {
       error('Gagal', 'Terjadi kesalahan saat menyimpan transaksi');
     }
