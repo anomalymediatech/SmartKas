@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Package, History, Settings, Settings2, Wrench, ShoppingBag } from 'lucide-react';
+import { LayoutDashboard, Package, History, Settings, Settings2, Wrench, ShoppingBag, Users, ShoppingCart } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 interface HeaderProps {
@@ -8,9 +8,12 @@ interface HeaderProps {
 }
 
 const navItems = [
-  { key: 'pos', label: 'POS', icon: LayoutDashboard, shortcut: 'F1' },
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, shortcut: '' },
+  { key: 'pos', label: 'POS', icon: ShoppingBag, shortcut: 'F1' },
   { key: 'history', label: 'Riwayat', icon: History, shortcut: 'F2' },
   { key: 'inventory', label: 'Inventori', icon: Package, shortcut: 'F3' },
+  { key: 'employees', label: 'Karyawan', icon: Users, shortcut: '' },
+  { key: 'purchases', label: 'Pembelian', icon: ShoppingCart, shortcut: '' },
   { key: 'settings', label: 'Pengaturan', icon: Settings2, shortcut: 'F4' },
 ];
 
@@ -51,9 +54,11 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
                   >
                     <Icon className="h-4 w-4" />
                     {item.label}
-                    <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-xs font-mono bg-industrial-100 rounded">
-                      {item.shortcut}
-                    </span>
+                     {item.shortcut && (
+                       <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-xs font-mono bg-industrial-100 rounded">
+                         {item.shortcut}
+                       </span>
+                     )}
                   </button>
                 );
               })}

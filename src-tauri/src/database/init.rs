@@ -1,10 +1,61 @@
 use super::get_db_connection;
 
 pub(crate) const SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS suppliers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    contact_person TEXT,
+    is_active INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_id INTEGER NOT NULL,
+    purchase_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    total_cost REAL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending', 'Received', 'Cancelled')),
+    created_by TEXT,
+    FOREIGN KEY(supplier_id) REFERENCES suppliers(id)
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id INTEGER NOT NULL,
+    sparepart_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_cost REAL NOT NULL,
+    FOREIGN KEY(po_id) REFERENCES purchase_orders(id),
+    FOREIGN KEY(sparepart_id) REFERENCES spareparts(id)
+);
+
+CREATE TABLE IF NOT EXISTS employees (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin', 'cashier', 'mechanic')),
+    phone TEXT,
+    commission_rate REAL DEFAULT 0,
+    base_salary REAL DEFAULT 0,
+    is_active INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS mechanic_commissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER NOT NULL,
+    mechanic_id INTEGER NOT NULL,
+    service_name TEXT NOT NULL,
+    commission_amount REAL NOT NULL,
+    calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(transaction_id) REFERENCES transactions(id),
+    FOREIGN KEY(mechanic_id) REFERENCES employees(id)
+);
+
 CREATE TABLE IF NOT EXISTS mechanics (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     name TEXT NOT NULL, 
-    is_active INTEGER DEFAULT 1
+    is_active INTEGER DEFAULT 1,
+    employee_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS spareparts (
@@ -114,12 +165,31 @@ pub async fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> 
     // Apply migrations for databases created by older versions
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN printer_name TEXT", ()).await;
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN paper_width INTEGER DEFAULT 80", ()).await;
+    let _ = conn.execute("ALTER TABLE mechanics ADD COLUMN employee_id INTEGER", ()).await;
 
     // Execute schema
     conn.execute_batch(SCHEMA_SQL)
         .await
         .map_err(|e| format!("Failed to create schema: {}", e))?;
+
+    // Backfill employees from existing mechanics table (after schema ensures employees exists)
+    let _ = conn.execute(
+        "INSERT INTO employees (name, role, commission_rate, is_active)
+         SELECT m.name, 'mechanic', 10, m.is_active FROM mechanics m
+         WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.name = m.name AND e.role = 'mechanic')",
+        (),
+    ).await;
+    let _ = conn.execute(
+        "UPDATE mechanics SET employee_id = (SELECT e.id FROM employees e WHERE e.name = mechanics.name AND e.role = 'mechanic' LIMIT 1)
+         WHERE employee_id IS NULL",
+        (),
+    ).await;
     
+    // Indexes for dashboard queries
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)", ()).await.map_err(|e| e.to_string())?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_transaction_details_type ON transaction_details(item_type)", ()).await.map_err(|e| e.to_string())?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_transactions_vehicle_plate ON transactions(vehicle_plate)", ()).await.map_err(|e| e.to_string())?;
+
     // Seed only once: skip when master data already exists
     let mut rows = conn
         .query("SELECT COUNT(*) FROM mechanics", ())

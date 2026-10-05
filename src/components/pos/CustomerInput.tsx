@@ -3,6 +3,8 @@ import { Search, Truck, User, Hash, UserCog } from 'lucide-react';
 import { Input, Select } from '@/components/ui';
 import { usePOSStore } from '@/stores';
 import { useAppStore } from '@/stores/useAppStore';
+import { VehicleHistoryModal } from './VehicleHistoryModal';
+import { dbSearchVehiclePlates } from '@/hooks/useDatabase';
 
 export function CustomerInput() {
   const {
@@ -36,6 +38,7 @@ export function CustomerInput() {
   const customerNameRef = useRef<HTMLInputElement>(null);
   const queueNumberRef = useRef<HTMLInputElement>(null);
   const mechanicRef = useRef<HTMLSelectElement>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     setFocusRef('vehiclePlate', vehiclePlateRef);
@@ -57,13 +60,14 @@ export function CustomerInput() {
     const upperValue = value.toUpperCase();
     setVehiclePlate(upperValue);
     
-    // In a real app, this would fetch from history
-    // For now, show some mock suggestions
+    // Suggestion plates dari riwayat transaksi di database
     if (upperValue.length >= 2) {
-      const suggestions = ['B 1234 ABC', 'B 5678 DEF', 'D 9012 GHI', 'F 3456 JKL']
-        .filter(p => p.includes(upperValue));
-      setVehiclePlateSuggestions(suggestions);
-      setShowVehiclePlateDropdown(suggestions.length > 0);
+      dbSearchVehiclePlates(upperValue)
+        .then((suggestions) => {
+          setVehiclePlateSuggestions(suggestions);
+          setShowVehiclePlateDropdown(suggestions.length > 0);
+        })
+        .catch(() => setShowVehiclePlateDropdown(false));
     } else {
       setShowVehiclePlateDropdown(false);
     }
@@ -73,8 +77,6 @@ export function CustomerInput() {
     setVehiclePlate(plate);
     setShowVehiclePlateDropdown(false);
     vehiclePlateRef.current?.blur();
-    // Auto-fill customer name from history (mock)
-    setCustomerName('Pelanggan ' + plate.replace(/\s/g, ''));
   };
 
   const handleCustomerNameChange = (value: string) => {
@@ -159,6 +161,15 @@ export function CustomerInput() {
                 </button>
               ))}
             </div>
+          )}
+          {vehiclePlate.trim().length >= 3 && (
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="mt-1.5 text-xs font-medium text-accent-600 hover:text-accent-700 hover:underline"
+            >
+              Lihat Riwayat Servis
+            </button>
           )}
         </div>
 
@@ -246,6 +257,7 @@ export function CustomerInput() {
           </div>
         </div>
       </div>
+      <VehicleHistoryModal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} plate={vehiclePlate.trim()} />
     </div>
   );
 }

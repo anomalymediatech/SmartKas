@@ -133,6 +133,7 @@ async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInp
     let transaction_id = conn.last_insert_rowid();
     
     // Insert transaction details and update stock for spareparts
+    let mut layanan_items: Vec<(String, f64)> = Vec::new();
     for detail in input.details {
         conn.execute(
             r#"INSERT INTO transaction_details 
@@ -148,6 +149,11 @@ async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInp
             ],
         ).await?;
         
+        // If service, track for commission recording
+        if detail.item_type == "layanan" {
+            layanan_items.push((detail.item_name.clone(), detail.total_price));
+        }
+
         // If sparepart, update stock and record movement
         if detail.item_type == "sparepart" {
             let sparepart_id: Option<i64> = if let Some(id) = detail.sparepart_id {
@@ -193,6 +199,21 @@ async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInp
         }
     }
     
+    // Record mechanic commissions for layanan items
+    if let Some(mechanic_id) = input.mechanic_id {
+        if !layanan_items.is_empty() {
+            let mut emp_rows = conn.query(
+                "SELECT e.id, e.commission_rate FROM employees e JOIN mechanics m ON m.employee_id = e.id WHERE m.id = ?",
+                params![mechanic_id],
+            ).await?;
+            if let Some(row) = emp_rows.next().await? {
+                let employee_id: i64 = row.get(0)?;
+                let rate: f64 = row.get(1)?;
+                super::employees::record_commissions(conn, transaction_id, employee_id, &layanan_items, rate).await?;
+            }
+        }
+    }
+
     Ok(TransactionOutput {
         id: transaction_id,
         invoice_number,

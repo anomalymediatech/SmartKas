@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { X, LayoutDashboard, Package, History, Settings, Settings2, Wrench, ShoppingBag, ChevronRight } from 'lucide-react';
+import { X, LayoutDashboard, Package, History, Settings, Settings2, Wrench, ShoppingBag, ChevronRight, Users, ShoppingCart } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { Modal } from '@/components/ui';
 
@@ -11,9 +11,12 @@ interface MobileSidebarProps {
 }
 
 const navItems = [
-  { key: 'pos', label: 'POS', icon: LayoutDashboard },
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'pos', label: 'POS', icon: ShoppingBag },
   { key: 'history', label: 'Riwayat', icon: History },
   { key: 'inventory', label: 'Inventori', icon: Package },
+  { key: 'employees', label: 'Karyawan', icon: Users },
+  { key: 'purchases', label: 'Pembelian', icon: ShoppingCart },
   { key: 'settings', label: 'Pengaturan', icon: Settings2 },
 ];
 

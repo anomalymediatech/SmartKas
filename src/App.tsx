@@ -3,17 +3,23 @@ import { AppLayout } from './components/layout';
 import { MobileSidebar, MobileMenuButton } from './components/layout/Sidebar';
 import { ToastContainer } from './components/ui';
 import POSPage from './pages/POS';
+import DashboardPage from './pages/Dashboard';
 import SettingsPage from './pages/Settings';
 import HistoryPage from './pages/History';
 import InventoryPage from './pages/Inventory';
+import EmployeesPage from './pages/Employees';
+import PurchasesPage from './pages/Purchases';
 import { useAppStore } from './stores';
 import { dbPrintReceipt } from './hooks/useDatabase';
 import { useToastStore } from './hooks/useToast';
 
 const pages = [
+  { key: 'dashboard', label: 'Dashboard', component: DashboardPage },
   { key: 'pos', label: 'POS', component: POSPage },
   { key: 'history', label: 'Riwayat', component: HistoryPage },
   { key: 'inventory', label: 'Inventori', component: InventoryPage },
+  { key: 'employees', label: 'Karyawan', component: EmployeesPage },
+  { key: 'purchases', label: 'Pembelian', component: PurchasesPage },
   { key: 'settings', label: 'Pengaturan', component: SettingsPage },
 ];
 
@@ -26,6 +32,12 @@ function App() {
   useEffect(() => {
     initializeApp();
   }, [initializeApp]);
+
+  useEffect(() => {
+    const handler = () => useAppStore.getState().loadMechanics();
+    window.addEventListener('mechanics-changed', handler);
+    return () => window.removeEventListener('mechanics-changed', handler);
+  }, []);
 
   const pageConfig = pages.find(p => p.key === currentPage) || pages[0];
   const CurrentComponent = pageConfig.component;

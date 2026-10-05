@@ -5,3 +5,7 @@ pub mod spareparts;
 pub mod services;
 pub mod transactions;
 pub mod printing;
+pub mod dashboard;
+pub mod vehicle;
+pub mod employees;
+pub mod supplies;

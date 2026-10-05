@@ -65,6 +65,32 @@ pub fn run() {
             // Printing commands
             commands::printing::print_receipt,
             commands::printing::get_printers,
+
+            // Dashboard commands
+            commands::dashboard::get_daily_summary,
+            commands::dashboard::get_low_stock_items,
+            commands::dashboard::get_mechanic_performance,
+            commands::dashboard::get_sales_trend,
+
+            // Vehicle history & reminders
+            commands::vehicle::get_vehicle_history,
+            commands::vehicle::get_vehicle_reminder,
+            commands::vehicle::get_upcoming_reminders,
+            commands::vehicle::search_vehicle_plates,
+
+            // Employee & commission commands
+            commands::employees::get_employees,
+            commands::employees::add_employee,
+            commands::employees::delete_employee,
+            commands::employees::calculate_mechanic_commission,
+            commands::employees::get_mechanic_monthly_summary,
+
+            // Supplies & purchasing
+            commands::supplies::get_suppliers,
+            commands::supplies::create_supplier,
+            commands::supplies::create_purchase_order,
+            commands::supplies::receive_purchase_order,
+            commands::supplies::get_purchase_orders,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

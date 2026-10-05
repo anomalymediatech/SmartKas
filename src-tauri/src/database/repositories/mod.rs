@@ -3,3 +3,7 @@ pub mod spareparts;
 pub mod services;
 pub mod transactions;
 pub mod settings;
+pub mod dashboard;
+pub mod vehicle;
+pub mod employees;
+pub mod supplies;
