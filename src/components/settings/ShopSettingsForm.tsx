@@ -4,6 +4,8 @@ import { useAppStore } from '@/stores';
 import { useToast } from '@/hooks/useToast';
 import { dbGetPrinters, dbUploadShopLogo, dbDeleteShopLogo, dbGetShopLogoBase64 } from '@/hooks/useDatabase';
 import type { Settings, PrinterInfo } from '@/types';
+import { open } from '@tauri-apps/plugin-dialog';
+import { readFile } from '@tauri-apps/plugin-fs';
 
 export function ShopSettingsForm() {
   const { settings, updateSettings, isLoading } = useAppStore();
@@ -51,25 +53,28 @@ export function ShopSettingsForm() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!['image/png', 'image/jpeg'].includes(file.type)) {
-      error('Format tidak didukung', 'Gunakan file PNG atau JPG');
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      error('File terlalu besar', 'Maksimal 2MB');
-      return;
-    }
-
-    setLogoUploading(true);
+  const handleLogoSelect = async () => {
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      const extension = file.type === 'image/png' ? 'png' : 'jpg';
+      const filePath = await open({
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+        multiple: false,
+      });
+      if (!filePath) return;
+
+      setLogoUploading(true);
+
+      // Read file as binary using Tauri fs plugin
+      const bytes = await readFile(filePath);
+      
+      // Check file size (2MB limit)
+      if (bytes.length > 2 * 1024 * 1024) {
+        error('File terlalu besar', 'Maksimal 2MB');
+        return;
+      }
+
+      // Determine extension from file path
+      const extension = filePath.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+
       const savedName = await dbUploadShopLogo(Array.from(bytes), extension);
       const base64 = await dbGetShopLogoBase64();
       setLogoPreview(base64);
@@ -79,7 +84,6 @@ export function ShopSettingsForm() {
       error('Gagal', 'Gagal mengupload logo');
     } finally {
       setLogoUploading(false);
-      e.target.value = '';
     }
   };
 
@@ -128,19 +132,15 @@ export function ShopSettingsForm() {
                 )}
               </div>
               <div className="flex flex-col gap-2">
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg"
-                    onChange={handleLogoSelect}
-                    disabled={logoUploading}
-                    className="sr-only"
-                    id="logo-upload"
-                  />
-                  <Button type="button" variant="outline" size="sm" disabled={logoUploading}>
-                    {logoUploading ? 'Mengupload...' : logoPreview ? 'Ganti Logo' : 'Upload Logo'}
-                  </Button>
-                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={logoUploading}
+                  onClick={handleLogoSelect}
+                >
+                  {logoUploading ? 'Mengupload...' : logoPreview ? 'Ganti Logo' : 'Upload Logo'}
+                </Button>
                 {logoPreview && (
                   <Button type="button" variant="danger" size="sm" onClick={handleLogoDelete}>
                     Hapus Logo
