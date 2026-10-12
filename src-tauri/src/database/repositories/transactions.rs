@@ -33,6 +33,7 @@ pub struct TransactionDetail {
     pub quantity: i32,
     pub unit_price: f64,
     pub total_price: f64,
+    pub service_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -60,6 +61,8 @@ pub struct CreateTransactionDetailInput {
     pub total_price: f64,
     #[serde(default)]
     pub sparepart_id: Option<i64>,
+    #[serde(default)]
+    pub service_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -133,12 +136,11 @@ async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInp
     let transaction_id = conn.last_insert_rowid();
     
     // Insert transaction details and update stock for spareparts
-    let mut layanan_items: Vec<(String, f64)> = Vec::new();
     for detail in input.details {
         conn.execute(
             r#"INSERT INTO transaction_details 
-                (transaction_id, item_type, item_name, quantity, unit_price, total_price)
-                VALUES (?, ?, ?, ?, ?, ?)"#,
+                (transaction_id, item_type, item_name, quantity, unit_price, total_price, service_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?)"#,
             params![
                 transaction_id,
                 detail.item_type.clone(),
@@ -146,13 +148,11 @@ async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInp
                 detail.quantity,
                 detail.unit_price,
                 detail.total_price,
+                detail.service_type.clone(),
             ],
         ).await?;
         
-        // If service, track for commission recording
-        if detail.item_type == "layanan" {
-            layanan_items.push((detail.item_name.clone(), detail.total_price));
-        }
+        
 
         // If sparepart, update stock and record movement
         if detail.item_type == "sparepart" {
@@ -199,21 +199,6 @@ async fn create_transaction_inner(conn: &Connection, input: CreateTransactionInp
         }
     }
     
-    // Record mechanic commissions for layanan items
-    if let Some(mechanic_id) = input.mechanic_id {
-        if !layanan_items.is_empty() {
-            let mut emp_rows = conn.query(
-                "SELECT e.id, e.commission_rate FROM employees e JOIN mechanics m ON m.employee_id = e.id WHERE m.id = ?",
-                params![mechanic_id],
-            ).await?;
-            if let Some(row) = emp_rows.next().await? {
-                let employee_id: i64 = row.get(0)?;
-                let rate: f64 = row.get(1)?;
-                super::employees::record_commissions(conn, transaction_id, employee_id, &layanan_items, rate).await?;
-            }
-        }
-    }
-
     Ok(TransactionOutput {
         id: transaction_id,
         invoice_number,
@@ -263,6 +248,7 @@ mod tests {
                     unit_price: 30000.0,
                     total_price: 30000.0,
                     sparepart_id: None,
+                    service_type: None,
                 },
                 CreateTransactionDetailInput {
                     item_type: "sparepart".into(),
@@ -271,6 +257,7 @@ mod tests {
                     unit_price: 95000.0,
                     total_price: 95000.0,
                     sparepart_id: Some(1),
+                    service_type: None,
                 },
             ],
         }
@@ -493,10 +480,58 @@ pub async fn get_transactions(pool: &DbPool, filters: HistoryFilters) -> Result<
     })
 }
 
+pub async fn get_next_queue_number(pool: &DbPool) -> Result<i32> {
+    let conn = pool.lock().await;
+    // Termasuk status 'Batal' agar nomor antrian yang sudah dipakai (lalu dibatalkan)
+    // tidak dipakai ulang di hari yang sama.
+    let mut rows = conn.query(
+        "SELECT COALESCE(MAX(queue_number), 0) + 1 FROM transactions WHERE date(transaction_date, 'localtime') = date('now', 'localtime')",
+        (),
+    ).await?;
+    match rows.next().await? {
+        Some(row) => Ok(row.get(0)?),
+        None => Ok(1),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DailyCloseRow {
+    pub payment_method: String,
+    pub count: i64,
+    pub total: f64,
+}
+
+pub async fn get_daily_close(pool: &DbPool, date: Option<&str>) -> Result<(Vec<DailyCloseRow>, i64, f64)> {
+    let conn = pool.lock().await;
+    let sql = match date {
+        Some(_) => "SELECT payment_method, COUNT(*), COALESCE(SUM(total_amount), 0.0) FROM transactions
+         WHERE date(transaction_date, 'localtime') = ? AND status != 'Batal'
+         GROUP BY payment_method",
+        None => "SELECT payment_method, COUNT(*), COALESCE(SUM(total_amount), 0.0) FROM transactions
+         WHERE date(transaction_date, 'localtime') = date('now', 'localtime') AND status != 'Batal'
+         GROUP BY payment_method",
+    };
+    let mut rows = match date {
+        Some(d) => conn.query(sql, libsql::params![d]).await?,
+        None => conn.query(sql, ()).await?,
+    };
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(DailyCloseRow {
+            payment_method: row.get(0)?,
+            count: row.get(1)?,
+            total: row.get(2)?,
+        });
+    }
+    let count = out.iter().map(|r| r.count).sum();
+    let total = out.iter().map(|r| r.total).sum();
+    Ok((out, count, total))
+}
+
 pub async fn get_transaction_details(pool: &DbPool, transaction_id: i64) -> Result<Vec<TransactionDetail>> {
     let conn = pool.lock().await;
     let mut rows = conn.query(
-        "SELECT id, transaction_id, item_type, item_name, quantity, unit_price, total_price FROM transaction_details WHERE transaction_id = ? ORDER BY id",
+        "SELECT id, transaction_id, item_type, item_name, quantity, unit_price, total_price, service_type FROM transaction_details WHERE transaction_id = ? ORDER BY id",
         params![transaction_id],
     ).await?;
     
@@ -510,6 +545,7 @@ pub async fn get_transaction_details(pool: &DbPool, transaction_id: i64) -> Resu
             quantity: row.get(4)?,
             unit_price: row.get(5)?,
             total_price: row.get(6)?,
+            service_type: row.get(7)?,
         });
     }
     Ok(details)

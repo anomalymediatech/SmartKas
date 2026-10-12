@@ -1,26 +1,30 @@
 import { useState } from 'react';
-import { Plus, Edit, Trash2, Wrench } from 'lucide-react';
-import { Button, Input, Modal, Table, TablePagination } from '@/components/ui';
+import { Plus, Edit, Trash2, Wrench, Upload } from 'lucide-react';
+import { ImportExcelModal } from '@/components/ImportExcelModal';
+import { dbImportServices } from '@/hooks/useDatabase';
 import { useAppStore } from '@/stores';
+import { Button, Input, Modal, Table, TablePagination } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 import { formatRupiah, parseRupiah } from '@/utils/currency';
 import type { Service } from '@/types';
 
 export function ServicesTable() {
-  const { services, addService, updateService, deleteService, isLoading } = useAppStore();
+  const { services, addService, updateService, deleteService, isLoading, loadServices } = useAppStore();
   const { success, error } = useToast();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    service_type: 'biasa' as 'biasa' | 'upgrade',
   });
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   const openAddModal = () => {
     setEditingService(null);
-    setFormData({ name: '', price: '' });
+    setFormData({ name: '', price: '', service_type: 'biasa' });
     setIsModalOpen(true);
   };
 
@@ -29,6 +33,7 @@ export function ServicesTable() {
     setFormData({
       name: service.name,
       price: service.price.toString(),
+      service_type: service.service_type ?? 'biasa',
     });
     setIsModalOpen(true);
   };
@@ -39,6 +44,7 @@ export function ServicesTable() {
       const data = {
         name: formData.name,
         price: parseRupiah(formData.price),
+        service_type: formData.service_type,
       };
       
       if (editingService) {
@@ -71,6 +77,7 @@ export function ServicesTable() {
   const columns = [
     { key: 'name', header: 'Nama Layanan', render: (row: Service) => <span className="font-medium">{row.name}</span> },
     { key: 'price', header: 'Harga', render: (row: Service) => <span className="font-mono font-semibold">{formatRupiah(row.price)}</span> },
+    { key: 'service_type', header: 'Jenis', render: (row: Service) => <span className={`px-2 py-0.5 rounded text-xs ${row.service_type === 'upgrade' ? 'bg-purple-50 text-purple-700' : 'bg-emerald-50 text-emerald-700'}`}>{row.service_type === 'upgrade' ? 'Upgrade' : 'Biasa'}</span> },
     { 
       key: 'actions', 
       header: 'Aksi', 
@@ -96,10 +103,16 @@ export function ServicesTable() {
           </span>
           Daftar Layanan Standar
         </h3>
-        <Button onClick={openAddModal} size="sm">
-          <Plus className="h-4 w-4" />
-          Tambah
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+            <Upload className="h-4 w-4" />
+            Import
+          </Button>
+          <Button onClick={openAddModal} size="sm">
+            <Plus className="h-4 w-4" />
+            Tambah
+          </Button>
+        </div>
       </div>
 
       <Table
@@ -143,6 +156,17 @@ export function ServicesTable() {
             inputMode="numeric"
             required
           />
+          <div>
+            <label className="block text-sm font-medium text-industrial-700 mb-1.5">Jenis Layanan</label>
+            <select
+              value={formData.service_type}
+              onChange={(e) => setFormData({ ...formData, service_type: e.target.value as 'biasa' | 'upgrade' })}
+              className="w-full px-3 py-2 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500"
+            >
+              <option value="biasa">Service Biasa</option>
+              <option value="upgrade">Service Upgrade</option>
+            </select>
+          </div>
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="secondary" onClick={() => { setIsModalOpen(false); setEditingService(null); }}>
               Batal
@@ -153,6 +177,23 @@ export function ServicesTable() {
           </div>
         </form>
       </Modal>
+
+      <ImportExcelModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        title="Import Layanan dari Excel"
+        templateFilename="template-layanan.xlsx"
+        columns={[
+          { key: 'name', label: 'Nama', candidates: ['name', 'nama', 'nama layanan', 'layanan'], required: true },
+          { key: 'price', label: 'Harga', candidates: ['price', 'harga'] },
+        ]}
+        exampleRow={['Ganti Oli Mesin', 50000]}
+        onImport={async (rows) => {
+          const result = await dbImportServices(rows as { name: string; price: number | null }[]);
+          await loadServices();
+          return result;
+        }}
+      />
     </div>
   );
 }

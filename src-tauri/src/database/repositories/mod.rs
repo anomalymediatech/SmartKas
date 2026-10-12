@@ -7,6 +7,7 @@ pub mod dashboard;
 pub mod vehicle;
 pub mod employees;
 pub mod supplies;
+pub mod payroll;
 
 /// Build a SQL fragment filtering a table alias by local transaction date range.
 /// Returns (fragment, values) to be appended to a query and its positional params.

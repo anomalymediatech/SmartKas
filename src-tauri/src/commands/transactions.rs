@@ -33,6 +33,27 @@ pub async fn get_transaction_details(app_handle: tauri::AppHandle, transaction_i
 }
 
 #[tauri::command]
+pub async fn get_next_queue_number(app_handle: tauri::AppHandle) -> Result<i32, AppError> {
+    let pool = get_db_connection(&app_handle).await?;
+    crate::database::repositories::transactions::get_next_queue_number(&pool).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_daily_close(app_handle: tauri::AppHandle, date: Option<String>) -> Result<DailyCloseReport, AppError> {
+    let pool = get_db_connection(&app_handle).await?;
+    let (rows, total_count, total_amount) =
+        crate::database::repositories::transactions::get_daily_close(&pool, date.as_deref()).await.map_err(|e| e.to_string())?;
+    Ok(DailyCloseReport { rows, total_count, total_amount })
+}
+
+#[derive(serde::Serialize)]
+pub struct DailyCloseReport {
+    pub rows: Vec<crate::database::repositories::transactions::DailyCloseRow>,
+    pub total_count: i64,
+    pub total_amount: f64,
+}
+
+#[tauri::command]
 pub async fn get_stock_movements(app_handle: tauri::AppHandle, sparepart_id: Option<i64>) -> Result<Vec<StockMovement>, AppError> {
     let pool = get_db_connection(&app_handle).await?;
     fetch_stock_movements(&pool, sparepart_id).await.map_err(|e| e.to_string())

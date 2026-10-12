@@ -48,11 +48,63 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
 CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin', 'cashier', 'mechanic')),
+    role TEXT NOT NULL CHECK(role IN ('admin', 'cashier', 'mechanic', 'helper')),
     phone TEXT,
-    commission_rate REAL DEFAULT 0,
     base_salary REAL DEFAULT 0,
+    daily_rate REAL DEFAULT 0,
     is_active INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS helper_daily_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    work_date TEXT NOT NULL,
+    days REAL NOT NULL DEFAULT 1,
+    rate REAL NOT NULL,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(employee_id, work_date),
+    FOREIGN KEY(employee_id) REFERENCES employees(id)
+);
+
+CREATE TABLE IF NOT EXISTS payrolls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    date_from TEXT NOT NULL,
+    date_to TEXT NOT NULL,
+    computed_amount REAL NOT NULL DEFAULT 0,
+    final_amount REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'paid')),
+    paid_at DATETIME,
+    note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(employee_id, date_from),
+    FOREIGN KEY(employee_id) REFERENCES employees(id)
+);
+
+CREATE TABLE IF NOT EXISTS commission_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    date_from TEXT NOT NULL,
+    date_to TEXT NOT NULL,
+    amount REAL NOT NULL,
+    note TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(employee_id, date_from),
+    FOREIGN KEY(employee_id) REFERENCES employees(id)
+);
+
+CREATE TABLE IF NOT EXISTS commission_line_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    line_kind TEXT NOT NULL CHECK(line_kind IN ('transaction_detail', 'helper_log')),
+    line_ref_id INTEGER NOT NULL,
+    employee_id INTEGER NOT NULL,
+    override_amount REAL NOT NULL,
+    note TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(line_kind, line_ref_id),
+    FOREIGN KEY(employee_id) REFERENCES employees(id)
 );
 
 CREATE TABLE IF NOT EXISTS mechanic_commissions (
@@ -85,7 +137,8 @@ CREATE TABLE IF NOT EXISTS spareparts (
 CREATE TABLE IF NOT EXISTS services (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     name TEXT NOT NULL, 
-    price REAL NOT NULL
+    price REAL NOT NULL,
+    service_type TEXT DEFAULT 'biasa'
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -115,6 +168,7 @@ CREATE TABLE IF NOT EXISTS transaction_details (
     quantity INTEGER DEFAULT 1,
     unit_price REAL NOT NULL,
     total_price REAL NOT NULL,
+    service_type TEXT,
     FOREIGN KEY(transaction_id) REFERENCES transactions(id)
 );
 
@@ -124,7 +178,8 @@ CREATE TABLE IF NOT EXISTS settings (
     shop_address TEXT,
     receipt_footer TEXT,
     printer_name TEXT,
-    paper_width INTEGER DEFAULT 80
+    paper_width INTEGER DEFAULT 80,
+    shop_logo TEXT
 );
 
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -144,10 +199,11 @@ CREATE INDEX IF NOT EXISTS idx_transactions_plate ON transactions(vehicle_plate)
 CREATE INDEX IF NOT EXISTS idx_transaction_details_transaction ON transaction_details(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_sparepart ON stock_movements(sparepart_id);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_date ON stock_movements(created_at);
+CREATE INDEX IF NOT EXISTS idx_helper_daily_logs_employee ON helper_daily_logs(employee_id, work_date);
 "#;
 
 const SEED_SQL: &str = r#"
-INSERT OR IGNORE INTO settings (id, shop_name, shop_address, receipt_footer) VALUES (1, 'KASMINI BENGKEL', 'Jl. Raya No. 123, Jakarta', 'Service > 7x Gratis 1x. Barang yang sudah dibeli tidak dapat dikembalikan.');
+INSERT OR IGNORE INTO settings (id, shop_name, shop_address, receipt_footer) VALUES (1, 'POS Bengkel', 'Jl. Raya No. 123, Jakarta', 'Service > 7x Gratis 1x. Barang yang sudah dibeli tidak dapat dikembalikan.');
 
 INSERT OR IGNORE INTO mechanics (name) VALUES 
     ('Budi'),
@@ -173,6 +229,104 @@ INSERT OR IGNORE INTO spareparts (name, buy_price, sell_price, stock) VALUES
     ('Cairan Rem DOT 4', 30000, 55000, 20);
 "#;
 
+/// Rebuild the employees table when it was created by an older version
+/// (missing `daily_rate` column and the `helper` role in its CHECK constraint).
+/// SQLite cannot alter CHECK constraints, so a table rebuild is required.
+async fn migrate_employees_table(conn: &libsql::Connection) -> Result<(), String> {
+    let needs_rebuild: bool = match conn
+        .query("SELECT COUNT(*) FROM pragma_table_info('employees') WHERE name = 'daily_rate'", ())
+        .await
+    {
+        Ok(mut rows) => match rows.next().await {
+            Ok(Some(row)) => row.get::<i64>(0).map(|c| c == 0).unwrap_or(false),
+            _ => false,
+        },
+        Err(_) => false,
+    };
+    if !needs_rebuild {
+        return Ok(());
+    }
+
+    let _ = conn.execute("PRAGMA foreign_keys = OFF", ()).await;
+    let result = conn
+        .execute_batch(
+            r#"
+            CREATE TABLE employees_migrated (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin', 'cashier', 'mechanic', 'helper')),
+                phone TEXT,
+                base_salary REAL DEFAULT 0,
+                daily_rate REAL DEFAULT 0,
+                is_active INTEGER DEFAULT 1
+            );
+            INSERT INTO employees_migrated (id, name, role, phone, base_salary, daily_rate, is_active)
+            SELECT id, name, role, phone, base_salary, 0, is_active FROM employees;
+            DROP TABLE employees;
+            ALTER TABLE employees_migrated RENAME TO employees;
+            "#,
+        )
+        .await;
+    let _ = conn.execute("PRAGMA foreign_keys = ON", ()).await;
+    result
+        .map(|_| ())
+        .map_err(|e| format!("Failed to migrate employees table: {}", e))
+}
+
+/// Rebuild payrolls from the old monthly layout (month/year) to the weekly
+/// layout (date_from/date_to). Old monthly rows are kept with date_from set
+/// to the first day of that month so history is not lost.
+async fn migrate_payrolls_to_weekly(conn: &libsql::Connection) -> Result<(), String> {
+    let needs_rebuild: bool = match conn
+        .query("SELECT COUNT(*) FROM pragma_table_info('payrolls') WHERE name = 'date_from'", ())
+        .await
+    {
+        Ok(mut rows) => match rows.next().await {
+            Ok(Some(row)) => row.get::<i64>(0).map(|c| c == 0).unwrap_or(false),
+            _ => false,
+        },
+        Err(_) => false,
+    };
+    if !needs_rebuild {
+        return Ok(());
+    }
+
+    let _ = conn.execute("PRAGMA foreign_keys = OFF", ()).await;
+    let result = conn
+        .execute_batch(
+            r#"
+            CREATE TABLE payrolls_migrated (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                date_from TEXT NOT NULL,
+                date_to TEXT NOT NULL,
+                computed_amount REAL NOT NULL DEFAULT 0,
+                final_amount REAL NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'paid')),
+                paid_at DATETIME,
+                note TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(employee_id, date_from),
+                FOREIGN KEY(employee_id) REFERENCES employees(id)
+            );
+            INSERT INTO payrolls_migrated (id, employee_id, date_from, date_to, computed_amount, final_amount, status, paid_at, note, created_at, updated_at)
+            SELECT id, employee_id,
+                   printf('%04d-%02d-01', year, month),
+                   date(printf('%04d-%02d-01', year, month), '+1 month', '-1 day'),
+                   computed_amount, final_amount, status, paid_at, note, created_at, updated_at
+            FROM payrolls;
+            DROP TABLE payrolls;
+            ALTER TABLE payrolls_migrated RENAME TO payrolls;
+            "#,
+        )
+        .await;
+    let _ = conn.execute("PRAGMA foreign_keys = ON", ()).await;
+    result
+        .map(|_| ())
+        .map_err(|e| format!("Failed to migrate payrolls table: {}", e))
+}
+
 pub async fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let pool = get_db_connection(app_handle).await?;
     let conn = pool.lock().await;
@@ -180,17 +334,31 @@ pub async fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> 
     // Apply migrations for databases created by older versions
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN printer_name TEXT", ()).await;
     let _ = conn.execute("ALTER TABLE settings ADD COLUMN paper_width INTEGER DEFAULT 80", ()).await;
+    let _ = conn.execute("ALTER TABLE settings ADD COLUMN shop_logo TEXT", ()).await;
     let _ = conn.execute("ALTER TABLE mechanics ADD COLUMN employee_id INTEGER", ()).await;
+    let _ = conn.execute("ALTER TABLE transaction_details ADD COLUMN service_type TEXT", ()).await;
+    let _ = conn.execute("ALTER TABLE services ADD COLUMN service_type TEXT DEFAULT 'biasa'", ()).await;
+    let _ = conn.execute("ALTER TABLE payrolls ADD COLUMN weekly_salary_override REAL", ()).await;
 
     // Execute schema
     conn.execute_batch(SCHEMA_SQL)
         .await
         .map_err(|e| format!("Failed to create schema: {}", e))?;
 
+    // Migration: rebuild employees when daily_rate column is missing
+    // (SQLite cannot alter a CHECK constraint; old DBs only allow admin/cashier/mechanic)
+    migrate_employees_table(&conn).await?;
+
+    // Migration: rebuild payrolls from monthly (month/year) to weekly (date_from/date_to)
+    migrate_payrolls_to_weekly(&conn).await?;
+    let _ = conn
+        .execute("CREATE INDEX IF NOT EXISTS idx_payrolls_date ON payrolls(date_from)", ())
+        .await;
+
     // Backfill employees from existing mechanics table (after schema ensures employees exists)
     let _ = conn.execute(
-        "INSERT INTO employees (name, role, commission_rate, is_active)
-         SELECT m.name, 'mechanic', 10, m.is_active FROM mechanics m
+        "INSERT INTO employees (name, role, base_salary, daily_rate, is_active)
+         SELECT m.name, 'mechanic', 0, 0, m.is_active FROM mechanics m
          WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.name = m.name AND e.role = 'mechanic')",
         (),
     ).await;
@@ -245,4 +413,126 @@ pub async fn init_database(app_handle: &tauri::AppHandle) -> Result<(), String> 
     }
     
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn open_db() -> libsql::Connection {
+        let dir = std::env::temp_dir().join(format!("smartkas-init-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_url = format!("file:{}", dir.join("test.db").to_string_lossy());
+        let db = libsql::Builder::new_local(db_url).build().await.unwrap();
+        db.connect().unwrap()
+    }
+
+    #[tokio::test]
+    async fn rebuilds_old_employees_table_and_accepts_helper() {
+        let conn = open_db().await;
+        // Simulate a database created by an older version
+        conn.execute_batch(
+            r#"
+            CREATE TABLE employees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin', 'cashier', 'mechanic')),
+                phone TEXT,
+                commission_rate REAL DEFAULT 0,
+                base_salary REAL DEFAULT 0,
+                is_active INTEGER DEFAULT 1
+            );
+            INSERT INTO employees (name, role, commission_rate, base_salary) VALUES ('Budi', 'mechanic', 10, 1500000);
+            "#,
+        )
+        .await
+        .unwrap();
+
+        migrate_employees_table(&conn).await.unwrap();
+
+        // Old data preserved, daily_rate added, commission columns removed
+        let mut rows = conn
+            .query("SELECT name, role, base_salary, daily_rate FROM employees", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        assert_eq!(row.get::<String>(0).unwrap(), "Budi");
+        assert_eq!(row.get::<String>(1).unwrap(), "mechanic");
+        assert!((row.get::<f64>(2).unwrap() - 1_500_000.0).abs() < 0.01);
+        assert!((row.get::<f64>(3).unwrap()).abs() < 0.01);
+
+        // New CHECK constraint allows the helper role
+        conn.execute(
+            "INSERT INTO employees (name, role, daily_rate) VALUES ('Asisten', 'helper', 100000)",
+            (),
+        )
+        .await
+        .expect("helper role should be accepted after migration");
+
+        // Running it again is a no-op
+        migrate_employees_table(&conn).await.unwrap();
+        let mut rows = conn.query("SELECT COUNT(*) FROM employees", ()).await.unwrap();
+        assert_eq!(rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn fresh_schema_already_has_helper_and_daily_rate() {
+        let conn = open_db().await;
+        conn.execute_batch(SCHEMA_SQL).await.unwrap();
+        // Should be a no-op on a fresh schema
+        migrate_employees_table(&conn).await.unwrap();
+        conn.execute(
+            "INSERT INTO employees (name, role, daily_rate) VALUES ('Asisten', 'helper', 100000)",
+            (),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn rebuilds_monthly_payrolls_to_weekly() {
+        let conn = open_db().await;
+        // Simulate a database created by an older version (monthly payrolls)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE payrolls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                computed_amount REAL NOT NULL DEFAULT 0,
+                final_amount REAL NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'paid')),
+                paid_at DATETIME,
+                note TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(employee_id, month, year)
+            );
+            INSERT INTO payrolls (employee_id, month, year, computed_amount, final_amount, status)
+            VALUES (1, 9, 2026, 800000, 750000, 'paid');
+            "#,
+        )
+        .await
+        .unwrap();
+
+        migrate_payrolls_to_weekly(&conn).await.unwrap();
+
+        let mut rows = conn
+            .query("SELECT employee_id, date_from, date_to, computed_amount, final_amount, status FROM payrolls", ())
+            .await
+            .unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        assert_eq!(row.get::<i64>(0).unwrap(), 1);
+        assert_eq!(row.get::<String>(1).unwrap(), "2026-09-01");
+        assert_eq!(row.get::<String>(2).unwrap(), "2026-09-30");
+        assert!((row.get::<f64>(3).unwrap() - 800000.0).abs() < 0.01);
+        assert!((row.get::<f64>(4).unwrap() - 750000.0).abs() < 0.01);
+        assert_eq!(row.get::<String>(5).unwrap(), "paid");
+
+        // Running it again is a no-op
+        migrate_payrolls_to_weekly(&conn).await.unwrap();
+        let mut rows = conn.query("SELECT COUNT(*) FROM payrolls", ()).await.unwrap();
+        assert_eq!(rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap(), 1);
+    }
 }

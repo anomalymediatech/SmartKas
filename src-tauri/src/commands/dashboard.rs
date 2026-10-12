@@ -4,7 +4,8 @@ use crate::database::repositories::dashboard::{
     get_low_stock_items as fetch_low_stock_items,
     get_mechanic_performance as fetch_mechanic_performance,
     get_sales_trend as fetch_sales_trend,
-    DailySummary, LowStockItem, MechanicPerformance, SalesTrendPoint,
+    get_top_spareparts as fetch_top_spareparts,
+    DailySummary, LowStockItem, MechanicPerformance, SalesTrendPoint, TopSparepart,
 };
 use crate::database::get_db_connection;
 
@@ -36,4 +37,10 @@ pub async fn get_mechanic_performance(
 pub async fn get_sales_trend(app_handle: tauri::AppHandle, days: i32) -> Result<Vec<SalesTrendPoint>, AppError> {
     let pool = get_db_connection(&app_handle).await?;
     fetch_sales_trend(&pool, days).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_top_spareparts(app_handle: tauri::AppHandle, days: i32, limit: i32) -> Result<Vec<TopSparepart>, AppError> {
+    let pool = get_db_connection(&app_handle).await?;
+    fetch_top_spareparts(&pool, days, limit).await.map_err(|e| e.to_string())
 }

@@ -6,6 +6,7 @@ import {
   dbGetLowStockItems,
   dbGetMechanicPerformance,
   dbGetSalesTrend,
+  dbGetTopSpareparts,
 } from '@/hooks/useDatabase';
 import { formatRupiah } from '@/utils/currency';
 
@@ -17,6 +18,7 @@ export default function DashboardPage() {
   const today = new Date().toISOString().slice(0, 10);
   const { data: mechanics } = useSWR('dashboard:mechanics', () => dbGetMechanicPerformance(today, today), { refreshInterval: 15000 });
   const { data: trend } = useSWR('dashboard:trend', () => dbGetSalesTrend(7), { refreshInterval: 30000 });
+  const { data: topParts } = useSWR('dashboard:topparts', () => dbGetTopSpareparts(30, 5), { refreshInterval: 60000 });
 
   const cards = [
     { label: 'Omzet Hari Ini', value: summary ? formatRupiah(summary.total_omzet) : '—', icon: TrendingUp, color: 'text-accent-600 bg-accent-100' },
@@ -104,6 +106,38 @@ export default function DashboardPage() {
                   <td className="py-2 font-mono text-industrial-600">{formatRupiah(item.sell_price)}</td>
                   <td className={`py-2 text-right font-mono font-bold ${item.stock <= 0 ? 'text-red-600' : 'text-orange-600'}`}>
                     {item.stock}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-industrial-200 p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-industrial-900 mb-4">Barang Paling Laku — 30 Hari Terakhir</h2>
+        {!topParts || topParts.length === 0 ? (
+          <p className="text-sm text-industrial-400 py-6 text-center">Belum ada penjualan sparepart 30 hari terakhir</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-industrial-500 border-b border-industrial-100">
+                <th className="pb-2 w-10">#</th>
+                <th className="pb-2">Nama Sparepart</th>
+                <th className="pb-2 text-right">Terjual</th>
+                <th className="pb-2 text-right">Omzet</th>
+                <th className="pb-2 text-right">Stok Saat Ini</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topParts.map((item, i) => (
+                <tr key={item.name} className="border-b border-industrial-50">
+                  <td className="py-2 font-mono text-industrial-400">{i + 1}</td>
+                  <td className="py-2 font-medium text-industrial-800">{item.name}</td>
+                  <td className="py-2 text-right font-mono font-semibold text-industrial-900">{item.qty_sold} pcs</td>
+                  <td className="py-2 text-right font-mono text-industrial-600">{formatRupiah(item.revenue)}</td>
+                  <td className={`py-2 text-right font-mono font-bold ${item.stock == null ? 'text-industrial-400' : item.stock <= 0 ? 'text-red-600' : item.stock <= 5 ? 'text-orange-600' : 'text-emerald-600'}`}>
+                    {item.stock == null ? '—' : `${item.stock} pcs`}
                   </td>
                 </tr>
               ))}

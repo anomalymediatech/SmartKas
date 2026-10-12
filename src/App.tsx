@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AppLayout } from './components/layout';
 import { MobileSidebar, MobileMenuButton } from './components/layout/Sidebar';
 import { ToastContainer } from './components/ui';
+import { ReceiptPreview } from './components/receipt/ReceiptPreview';
 import POSPage from './pages/POS';
 import DashboardPage from './pages/Dashboard';
 import SettingsPage from './pages/Settings';
@@ -10,8 +11,6 @@ import InventoryPage from './pages/Inventory';
 import EmployeesPage from './pages/Employees';
 import PurchasesPage from './pages/Purchases';
 import { useAppStore } from './stores';
-import { dbPrintReceipt } from './hooks/useDatabase';
-import { useToastStore } from './hooks/useToast';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/Login';
 
@@ -30,6 +29,7 @@ function App() {
   const { user, isLoading: authLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState('pos');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [previewTxId, setPreviewTxId] = useState<number | null>(null);
   const { initializeApp } = useAppStore();
 
   useEffect(() => {
@@ -37,27 +37,20 @@ function App() {
   }, [initializeApp]);
 
   useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<number>).detail;
+      if (typeof id === 'number') setPreviewTxId(id);
+    };
+    window.addEventListener('print-receipt', handler);
+    return () => window.removeEventListener('print-receipt', handler);
+  }, []);
+
+  useEffect(() => {
     const handler = () => useAppStore.getState().loadMechanics();
     window.addEventListener('mechanics-changed', handler);
     return () => window.removeEventListener('mechanics-changed', handler);
   }, []);
 
-  const { settings } = useAppStore();
-
-  useEffect(() => {
-    const handler = async (e: Event) => {
-      const transactionId = (e as CustomEvent<number>).detail;
-      try {
-        await dbPrintReceipt(transactionId, settings?.printer_name ?? undefined, settings?.paper_width ?? 80);
-        useToastStore.getState().addToast({ type: 'success', title: 'Berhasil', message: 'Struk dikirim ke printer' });
-      } catch (err) {
-        console.error('Print failed:', err);
-        useToastStore.getState().addToast({ type: 'error', title: 'Gagal Cetak', message: err instanceof Error ? err.message : String(err), duration: 5000 });
-      }
-    };
-    window.addEventListener('print-receipt', handler);
-    return () => window.removeEventListener('print-receipt', handler);
-  }, [settings]);
 
   if (authLoading) {
     return (
@@ -79,6 +72,7 @@ function App() {
   return (
     <>
       <ToastContainer />
+      <ReceiptPreview transactionId={previewTxId} onClose={() => setPreviewTxId(null)} />
       <AppLayout currentPage={currentPage} onNavigate={setCurrentPage}>
         <MobileSidebar 
           isOpen={mobileSidebarOpen} 

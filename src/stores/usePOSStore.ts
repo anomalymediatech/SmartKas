@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { CartItem, Mechanic } from '@/types';
 import { dbCreateTransaction } from '@/hooks/useDatabase';
+import { invoke } from '@tauri-apps/api/core';
 
 interface POSState {
   // Customer/Vehicle Input
@@ -18,6 +19,7 @@ interface POSState {
   // Calculations
   discount: number;
   paidAmount: number;
+  paymentMethod: 'Cash' | 'Transfer' | 'QRIS';
   
   // UI State
   isProcessing: boolean;
@@ -62,6 +64,7 @@ interface POSState {
   
   // Actions - Layanan
   addLayanan: (item: Omit<CartItem, 'id'>) => void;
+  updateLayananName: (index: number, name: string) => void;
   updateLayananPrice: (index: number, price: number) => void;
   updateLayananQty: (index: number, qty: number) => void;
   removeLayanan: (index: number) => void;
@@ -69,6 +72,7 @@ interface POSState {
   
   // Actions - Sparepart (with stock sync)
   addSparepart: (item: Omit<CartItem, 'id'>, currentStock: number) => Promise<boolean>;
+  updateSparepartName: (index: number, name: string) => void;
   updateSparepartQty: (index: number, qty: number, currentStock: number) => Promise<boolean>;
   updateSparepartPrice: (index: number, price: number) => void;
   removeSparepart: (index: number) => void;
@@ -77,6 +81,8 @@ interface POSState {
   // Actions - Payment
   setDiscount: (amount: number) => void;
   setPaidAmount: (amount: number) => void;
+  setPaymentMethod: (method: 'Cash' | 'Transfer' | 'QRIS') => void;
+  updateLayananServiceType: (index: number, type: 'biasa' | 'upgrade') => void;
   
   // Computed (via getters)
   getSubtotalLayanan: () => number;
@@ -104,6 +110,7 @@ const initialState = {
   sparepartItems: [],
   discount: 0,
   paidAmount: 0,
+  paymentMethod: 'Cash' as const,
   isProcessing: false,
   vehiclePlateSuggestions: [],
   showVehiclePlateDropdown: false,
@@ -155,6 +162,12 @@ export const usePOSStore = create<POSState>()(
         layananItems: [...state.layananItems, { ...item, id: crypto.randomUUID() }],
       })),
 
+      updateLayananName: (index, name) => set((state) => {
+        const items = [...state.layananItems];
+        if (items[index]) items[index] = { ...items[index], item_name: name };
+        return { layananItems: items };
+      }),
+
       updateLayananPrice: (index, price) => set((state) => {
         const items = [...state.layananItems];
         if (items[index]) {
@@ -195,6 +208,12 @@ export const usePOSStore = create<POSState>()(
         }));
         return true;
       },
+
+      updateSparepartName: (index, name) => set((state) => {
+        const items = [...state.sparepartItems];
+        if (items[index]) items[index] = { ...items[index], item_name: name };
+        return { sparepartItems: items };
+      }),
 
       updateSparepartQty: async (index, qty, currentStock) => {
         const state = get();
@@ -245,6 +264,12 @@ export const usePOSStore = create<POSState>()(
         set({ discount: Math.min(Math.max(0, amount), subtotal) });
       },
       setPaidAmount: (amount) => set({ paidAmount: Math.max(0, amount) }),
+      setPaymentMethod: (method) => set({ paymentMethod: method }),
+      updateLayananServiceType: (index, type) => set((state) => {
+        const items = [...state.layananItems];
+        if (items[index]) items[index] = { ...items[index], service_type: type };
+        return { layananItems: items };
+      }),
 
       // Computed
       getSubtotalLayanan: () => {
@@ -282,14 +307,15 @@ export const usePOSStore = create<POSState>()(
         try {
           
           const details = [
-            ...state.layananItems.map((item) => ({
+            ...state.layananItems.filter((item) => item.item_name.trim() !== '').map((item) => ({
               item_type: 'layanan' as const,
               item_name: item.item_name,
               quantity: item.quantity,
               unit_price: item.unit_price,
               total_price: item.total_price,
+              service_type: item.service_type ?? 'biasa',
             })),
-            ...state.sparepartItems.map((item) => ({
+            ...state.sparepartItems.filter((item) => item.item_name.trim() !== '').map((item) => ({
               item_type: 'sparepart' as const,
               item_name: item.item_name,
               quantity: item.quantity,
@@ -310,7 +336,7 @@ export const usePOSStore = create<POSState>()(
             total_amount: state.getTotalAmount(),
             paid_amount: state.paidAmount,
             change_amount: state.getChangeAmount(),
-            payment_method: 'Cash',
+            payment_method: state.paymentMethod,
             details,
           };
 
@@ -329,14 +355,18 @@ export const usePOSStore = create<POSState>()(
       resetPOS: () => {
         set({
           ...initialState,
-          queueNumber: get().queueNumber + 1,
+          paymentMethod: 'Cash',
         });
+        get().loadNextQueueNumber();
       },
 
       loadNextQueueNumber: async () => {
-        // This will be implemented via a Tauri command to get max queue number for today
-        // For now, just increment
-        set((state) => ({ queueNumber: state.queueNumber + 1 }));
+        try {
+          const next = await invoke<number>('get_next_queue_number');
+          set({ queueNumber: next });
+        } catch {
+          set((state) => ({ queueNumber: state.queueNumber + 1 }));
+        }
       },
     }),
     { name: 'pos-store' }

@@ -122,11 +122,11 @@ export function CustomerInput() {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-industrial-200 p-4 md:p-6 mb-4">
+    <div className="bg-white rounded-xl border border-industrial-200 p-3 mb-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Vehicle Plate */}
         <div className="relative">
-          <label className="block text-sm font-medium text-industrial-700 mb-1.5">
+          <label className="block text-xs font-medium text-industrial-700 mb-1">
             Plat Nomor <span className="text-danger-500">*</span>
           </label>
           <div className="relative">
@@ -142,7 +142,7 @@ export function CustomerInput() {
               onFocus={() => setShowVehiclePlateDropdown(vehiclePlateSuggestions.length > 0)}
               onBlur={() => setTimeout(() => setShowVehiclePlateDropdown(false), 200)}
               placeholder="Contoh: B 1234 ABC"
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-uppercase"
+              className="w-full pl-10 pr-4 py-1.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-uppercase"
               autoComplete="off"
               autoFocus
             />
@@ -173,7 +173,7 @@ export function CustomerInput() {
 
         {/* Customer Name */}
         <div className="relative">
-          <label className="block text-sm font-medium text-industrial-700 mb-1.5">
+          <label className="block text-xs font-medium text-industrial-700 mb-1">
             Nama Pelanggan
           </label>
           <div className="relative">
@@ -189,7 +189,7 @@ export function CustomerInput() {
               onFocus={() => setShowCustomerNameDropdown(customerNameSuggestions.length > 0)}
               onBlur={() => setTimeout(() => setShowCustomerNameDropdown(false), 200)}
               placeholder="Nama pelanggan (opsional)"
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500"
+              className="w-full pl-10 pr-4 py-1.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500"
               autoComplete="off"
             />
           </div>
@@ -210,7 +210,7 @@ export function CustomerInput() {
 
         {/* Queue Number */}
         <div>
-          <label className="block text-sm font-medium text-industrial-700 mb-1.5">
+          <label className="block text-xs font-medium text-industrial-700 mb-1">
             No. Antrian <span className="text-danger-500">*</span>
           </label>
           <div className="relative">
@@ -224,14 +224,14 @@ export function CustomerInput() {
               onChange={(e) => handleQueueNumberChange(e.target.value)}
               onKeyDown={handleKeyDown}
               min="1"
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-center font-mono text-lg"
+              className="w-full pl-10 pr-4 py-1.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-center font-mono text-lg"
             />
           </div>
         </div>
 
         {/* Mechanic */}
         <div>
-          <label className="block text-sm font-medium text-industrial-700 mb-1.5">
+          <label className="block text-xs font-medium text-industrial-700 mb-1">
             Mekanik <span className="text-danger-500">*</span>
           </label>
           <div className="relative">
@@ -243,7 +243,7 @@ export function CustomerInput() {
               value={mechanicId || ''}
               onChange={(e) => setMechanicId(e.target.value ? parseInt(e.target.value, 10) : null)}
               onKeyDown={handleKeyDown}
-              className="w-full pl-10 pr-10 py-2.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 bg-white appearance-none bg-[url('data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 fill=%27none%27 viewBox=%270 0 20 20%27%3e%3cpath stroke=%27%236b7280%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%271.5%27 d=%27M6 8l4 4 4-4%27/%3e%3c/svg%3e')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat"
+              className="w-full pl-10 pr-10 py-1.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 bg-white appearance-none bg-[url('data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 fill=%27none%27 viewBox=%270 0 20 20%27%3e%3cpath stroke=%27%236b7280%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%271.5%27 d=%27M6 8l4 4 4-4%27/%3e%3c/svg%3e')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat"
             >
               <option value="">Pilih mekanik</option>
               {mechanics.map((mechanic) => (

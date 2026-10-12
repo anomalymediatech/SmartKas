@@ -1,64 +1,5 @@
-use crate::error::AppError;
-use crate::escpos::receipt::build_receipt_bytes;
-use crate::database::repositories::transactions::{get_transaction_details, Transaction};
-use crate::database::repositories::settings::get_settings;
-use crate::database::get_db_connection;
 use anyhow::Result;
-
-#[tauri::command]
-pub async fn print_receipt(app_handle: tauri::AppHandle, transaction_id: i64, printer_name: Option<String>, paper_width: u8) -> Result<Vec<u8>, AppError> {
-    let pool = get_db_connection(&app_handle).await?;
-
-    // Get transaction
-    let conn = pool.lock().await;
-    let mut rows = conn.query(
-        "SELECT t.id, t.invoice_number, t.queue_number, t.customer_name, t.vehicle_plate, t.mechanic_id, t.cashier_name, t.subtotal, t.discount, t.total_amount, t.paid_amount, t.change_amount, t.payment_method, t.status, t.transaction_date, m.name as mechanic_name
-        FROM transactions t
-        LEFT JOIN mechanics m ON t.mechanic_id = m.id
-        WHERE t.id = ?",
-        libsql::params![transaction_id],
-    ).await.map_err(|e| e.to_string())?;
-
-    let transaction = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-        Transaction {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            invoice_number: row.get(1).map_err(|e| e.to_string())?,
-            queue_number: row.get(2).map_err(|e| e.to_string())?,
-            customer_name: row.get(3).map_err(|e| e.to_string())?,
-            vehicle_plate: row.get(4).map_err(|e| e.to_string())?,
-            mechanic_id: row.get(5).map_err(|e| e.to_string())?,
-            cashier_name: row.get(6).map_err(|e| e.to_string())?,
-            subtotal: row.get(7).map_err(|e| e.to_string())?,
-            discount: row.get(8).map_err(|e| e.to_string())?,
-            total_amount: row.get(9).map_err(|e| e.to_string())?,
-            paid_amount: row.get(10).map_err(|e| e.to_string())?,
-            change_amount: row.get(11).map_err(|e| e.to_string())?,
-            payment_method: row.get(12).map_err(|e| e.to_string())?,
-            status: row.get(13).map_err(|e| e.to_string())?,
-            transaction_date: row.get(14).map_err(|e| e.to_string())?,
-            mechanic_name: row.get(15).map_err(|e| e.to_string())?,
-        }
-    } else {
-        return Err("Transaction not found".to_string());
-    };
-    drop(conn);
-
-    // Get transaction details
-    let details = get_transaction_details(&pool, transaction_id).await.map_err(|e| e.to_string())?;
-
-    // Get settings
-    let settings = get_settings(&pool).await.map_err(|e| e.to_string())?.unwrap_or_default();
-
-    // Build ESC/POS bytes
-    let bytes = build_receipt_bytes(&transaction, &details, &settings, paper_width);
-
-    // Print to Windows printer if name provided
-    if let Some(name) = printer_name {
-        print_to_windows_printer(&name, &bytes).map_err(|e| e.to_string())?;
-    }
-
-    Ok(bytes)
-}
+use crate::error::AppError;
 
 #[tauri::command]
 pub async fn get_printers(_app_handle: tauri::AppHandle) -> Result<Vec<PrinterInfo>, AppError> {
@@ -117,7 +58,7 @@ unsafe fn pwstr_to_string(p: windows::core::PWSTR) -> String {
     String::from_utf16_lossy(std::slice::from_raw_parts(p.0, len))
 }
 
-fn print_to_windows_printer(printer_name: &str, data: &[u8]) -> Result<()> {
+pub(crate) fn print_to_windows_printer(printer_name: &str, data: &[u8]) -> Result<()> {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Graphics::Printing::*;
     use windows::core::*;

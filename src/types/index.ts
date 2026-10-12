@@ -5,6 +5,7 @@ export interface Settings {
   receipt_footer: string | null;
   printer_name: string | null;
   paper_width: number | null;
+  shop_logo: string | null;
 }
 
 export interface Mechanic {
@@ -26,6 +27,7 @@ export interface Service {
   id: number;
   name: string;
   price: number;
+  service_type: 'biasa' | 'upgrade';
 }
 
 export interface Transaction {
@@ -55,6 +57,7 @@ export interface TransactionDetail {
   quantity: number;
   unit_price: number;
   total_price: number;
+  service_type?: 'biasa' | 'upgrade' | null;
 }
 
 export interface CreateTransactionInput {
@@ -80,6 +83,7 @@ export interface CreateTransactionDetailInput {
   total_price: number;
   sparepart_id?: number | null;
   service_id?: number | null;
+  service_type?: 'biasa' | 'upgrade' | null;
 }
 
 export interface TransactionOutput {
@@ -97,6 +101,7 @@ export interface CartItem {
   total_price: number;
   sparepart_id?: number;
   service_id?: number;
+  service_type?: 'biasa' | 'upgrade';
 }
 
 export interface StockMovement {

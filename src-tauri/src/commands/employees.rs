@@ -4,8 +4,9 @@ use crate::database::repositories::employees::{
     calculate_mechanic_commission as fetch_commission,
     delete_employee as remove_employee,
     get_employees as fetch_employees,
-    get_mechanic_monthly_summary as fetch_monthly,
-    CreateEmployeeInput, Employee, MechanicCommissionSummary, MechanicMonthlySummary,
+    update_employee as edit_employee,
+    CreateEmployeeInput, Employee, MechanicCommissionSummary,
+    UpdateEmployeeInput,
 };
 use crate::database::get_db_connection;
 
@@ -21,6 +22,13 @@ pub async fn add_employee(app_handle: tauri::AppHandle, token: String, data: Cre
     crate::commands::auth::require_admin(&app_handle, &token).await?;
     let pool = get_db_connection(&app_handle).await?;
     insert_employee(&pool, data).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_employee(app_handle: tauri::AppHandle, token: String, data: UpdateEmployeeInput) -> Result<Employee, AppError> {
+    crate::commands::auth::require_admin(&app_handle, &token).await?;
+    let pool = get_db_connection(&app_handle).await?;
+    edit_employee(&pool, data).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -40,21 +48,6 @@ pub async fn calculate_mechanic_commission(
     crate::commands::auth::require_admin(&app_handle, &token).await?;
     let pool = get_db_connection(&app_handle).await?;
     fetch_commission(&pool, date_from.as_deref(), date_to.as_deref())
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn get_mechanic_monthly_summary(
-    app_handle: tauri::AppHandle,
-    token: String,
-    employee_id: i64,
-    month: i32,
-    year: i32,
-) -> Result<MechanicMonthlySummary, AppError> {
-    crate::commands::auth::require_admin(&app_handle, &token).await?;
-    let pool = get_db_connection(&app_handle).await?;
-    fetch_monthly(&pool, employee_id, month, year)
         .await
         .map_err(|e| e.to_string())
 }

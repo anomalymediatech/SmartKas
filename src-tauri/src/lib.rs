@@ -49,6 +49,7 @@ pub fn run() {
             commands::spareparts::update_sparepart,
             commands::spareparts::delete_sparepart,
             commands::spareparts::adjust_stock,
+            commands::spareparts::import_spareparts,
             
             // Services commands
             commands::services::get_services,
@@ -56,6 +57,7 @@ pub fn run() {
             commands::services::create_service,
             commands::services::update_service,
             commands::services::delete_service,
+            commands::services::import_services,
             
             // Transaction commands
             commands::transactions::create_transaction,
@@ -65,14 +67,19 @@ pub fn run() {
             commands::transactions::get_stock_movements,
             
             // Printing commands
-            commands::printing::print_receipt,
             commands::printing::get_printers,
+            commands::receipt::print_receipt,
+            commands::receipt::get_receipt_data,
+            commands::receipt::print_daily_close,
+            commands::transactions::get_next_queue_number,
+            commands::transactions::get_daily_close,
 
             // Dashboard commands
             commands::dashboard::get_daily_summary,
             commands::dashboard::get_low_stock_items,
             commands::dashboard::get_mechanic_performance,
             commands::dashboard::get_sales_trend,
+    commands::dashboard::get_top_spareparts,
 
             // Vehicle history & reminders
             commands::vehicle::get_vehicle_history,
@@ -83,9 +90,20 @@ pub fn run() {
             // Employee & commission commands
             commands::employees::get_employees,
             commands::employees::add_employee,
+            commands::employees::update_employee,
             commands::employees::delete_employee,
             commands::employees::calculate_mechanic_commission,
-            commands::employees::get_mechanic_monthly_summary,
+
+            // Payroll commands (helper daily logs + weekly salary & commission)
+            commands::payroll::get_helper_daily_logs,
+            commands::payroll::log_helper_day,
+            commands::payroll::delete_helper_day,
+            commands::payroll::get_weekly_payroll_preview,
+            commands::payroll::save_weekly_payroll,
+            commands::payroll::get_weekly_payrolls,
+            commands::payroll::get_weekly_commission_summary,
+            commands::payroll::save_commission_line_override,
+            commands::payroll::delete_commission_line_override,
 
             // Supplies & purchasing
             commands::supplies::get_suppliers,

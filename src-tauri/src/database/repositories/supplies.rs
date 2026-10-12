@@ -327,7 +327,7 @@ mod tests {
                 item_name: "Roller".into(),
                 quantity: 1,
                 unit_price: 50000.0,
-                total_price: 50000.0,
+                total_price: 50000.0, service_type: None,
                 sparepart_id: Some(1),
             }],
         }).await.unwrap();
@@ -340,7 +340,7 @@ mod tests {
         let _ = summary;
         let conn = pool.lock().await;
         let mut rows = conn.query(
-            "SELECT COALESCE(SUM(td.quantity * sp.buy_price), 0) FROM transaction_details td JOIN spareparts sp ON sp.name = td.item_name WHERE td.item_type='sparepart'",
+            "SELECT COALESCE(SUM(td.quantity * sp.buy_price), 0.0) FROM transaction_details td JOIN spareparts sp ON sp.name = td.item_name WHERE td.item_type='sparepart'",
             (),
         ).await.unwrap();
         let hpp: f64 = rows.next().await.unwrap().unwrap().get(0).unwrap();

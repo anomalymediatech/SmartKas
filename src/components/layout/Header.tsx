@@ -38,7 +38,7 @@ export function Header({ currentPage, onNavigate }: HeaderProps) {
               <div className="w-8 h-8 bg-accent-500 rounded-lg flex items-center justify-center">
                 <Wrench className="h-5 w-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-industrial-900">SmartKas</span>
+              <span className="text-xl font-bold text-industrial-900">POS Bengkel</span>
             </div>
             <nav className="hidden md:flex items-center gap-1" role="navigation" aria-label="Navigasi utama">
               {visibleNavItems.map((item) => {

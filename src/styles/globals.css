@@ -127,3 +127,19 @@
   .receipt-print .bold { font-weight: bold; }
   .receipt-print .hline { border-top: 1px dashed #000; margin: 2mm 0; }
 }
+
+/* Print styles for A4 sheets (payroll/commission sheets) */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body.printing-sheet * { visibility: hidden; }
+  body.printing-sheet .print-sheet,
+  body.printing-sheet .print-sheet * { visibility: visible; }
+  body.printing-sheet .print-sheet { position: absolute; top: 0; left: 0; width: 100%; }
+
+  .print-sheet .no-print { display: none !important; }
+  .print-sheet input { border: 0 !important; background: transparent !important; padding: 0 !important; }
+}

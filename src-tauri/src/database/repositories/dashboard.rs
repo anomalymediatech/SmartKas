@@ -37,12 +37,12 @@ pub async fn get_daily_summary(pool: &DbPool, date: Option<&str>) -> Result<Dail
 
     let mut rows = if use_today {
         conn.query(
-            "SELECT COALESCE(SUM(total_amount), 0), COUNT(*) FROM transactions WHERE date(transaction_date, 'localtime') = date('now', 'localtime') AND status = 'Lunas'",
+            "SELECT COALESCE(SUM(total_amount), 0.0), COUNT(*) FROM transactions WHERE date(transaction_date, 'localtime') = date('now', 'localtime') AND status = 'Lunas'",
             (),
         ).await?
     } else {
         conn.query(
-            "SELECT COALESCE(SUM(total_amount), 0), COUNT(*) FROM transactions WHERE date(transaction_date, 'localtime') = date(?) AND status = 'Lunas'",
+            "SELECT COALESCE(SUM(total_amount), 0.0), COUNT(*) FROM transactions WHERE date(transaction_date, 'localtime') = date(?) AND status = 'Lunas'",
             params![date.unwrap()],
         ).await?
     };
@@ -65,7 +65,7 @@ pub async fn get_daily_summary(pool: &DbPool, date: Option<&str>) -> Result<Dail
     };
     let voids: i64 = if let Some(row) = vrows.next().await? { row.get(0)? } else { 0 };
 
-    let hpp_sql = "SELECT COALESCE(SUM(td.quantity * sp.buy_price), 0)
+    let hpp_sql = "SELECT COALESCE(SUM(td.quantity * sp.buy_price), 0.0)
            FROM transaction_details td
            JOIN transactions t ON t.id = td.transaction_id
            JOIN spareparts sp ON sp.name = td.item_name
@@ -138,7 +138,7 @@ pub async fn get_sales_trend(pool: &DbPool, days: i32) -> Result<Vec<SalesTrendP
     let conn = pool.lock().await;
     let mut rows = conn
         .query(
-            r#"SELECT date(transaction_date, 'localtime') AS d, COALESCE(SUM(total_amount), 0)
+            r#"SELECT date(transaction_date, 'localtime') AS d, COALESCE(SUM(total_amount), 0.0)
                FROM transactions
                WHERE status = 'Lunas' AND date(transaction_date, 'localtime') >= date('now', 'localtime', ?)
                GROUP BY d ORDER BY d ASC"#,
@@ -153,6 +153,55 @@ pub async fn get_sales_trend(pool: &DbPool, days: i32) -> Result<Vec<SalesTrendP
         });
     }
     Ok(points)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TopSparepart {
+    pub name: String,
+    pub qty_sold: i64,
+    pub revenue: f64,
+    pub stock: Option<i32>,
+}
+
+pub async fn get_top_spareparts(pool: &DbPool, days: i32, limit: i32) -> Result<Vec<TopSparepart>> {
+    let conn = pool.lock().await;
+    let mut rows = conn
+        .query(
+            r#"SELECT td.item_name, SUM(td.quantity), COALESCE(SUM(td.total_price), 0.0)
+               FROM transaction_details td
+               JOIN transactions t ON t.id = td.transaction_id
+               WHERE td.item_type = 'sparepart' AND t.status = 'Lunas'
+                 AND date(t.transaction_date, 'localtime') >= date('now', 'localtime', ?)
+               GROUP BY td.item_name
+               ORDER BY SUM(td.quantity) DESC
+               LIMIT ?"#,
+            params![format!("-{} days", days.saturating_sub(1)), limit],
+        )
+        .await?;
+    let mut tops: Vec<TopSparepart> = Vec::new();
+    while let Some(row) = rows.next().await? {
+        tops.push(TopSparepart {
+            name: row.get(0)?,
+            qty_sold: row.get(1)?,
+            revenue: row.get(2)?,
+            stock: None,
+        });
+    }
+    if !tops.is_empty() {
+        let mut stock_rows = conn
+            .query("SELECT name, stock FROM spareparts WHERE is_active = 1", ())
+            .await?;
+        let mut stock_map = std::collections::HashMap::new();
+        while let Some(row) = stock_rows.next().await? {
+            let name: String = row.get(0)?;
+            let stock: i32 = row.get(1)?;
+            stock_map.insert(name.to_lowercase(), stock);
+        }
+        for top in tops.iter_mut() {
+            top.stock = stock_map.get(&top.name.to_lowercase()).copied();
+        }
+    }
+    Ok(tops)
 }
 
 
@@ -182,6 +231,7 @@ mod tests {
             "INSERT INTO transactions (invoice_number, vehicle_plate, mechanic_id, cashier_name, subtotal, discount, total_amount, paid_amount, change_amount, payment_method, status) VALUES ('INV-2','B2',1,'Admin',50000,0,50000,50000,0,'Cash','Batal')",
             (),
         ).await.unwrap();
+        conn.execute("INSERT INTO transaction_details (transaction_id, item_type, item_name, quantity, unit_price, total_price) VALUES (2,'sparepart','Roller',10,95000,950000)", ()).await.unwrap();
         Arc::new(Mutex::new(conn))
     }
 
@@ -220,5 +270,16 @@ mod tests {
         let pool = setup().await;
         let pts = get_sales_trend(&pool, 7).await.unwrap();
         assert!(pts.iter().all(|p| p.total_amount >= 0.0));
+    }
+
+    #[tokio::test]
+    async fn top_spareparts_excludes_batal_and_joins_stock() {
+        let pool = setup().await;
+        let tops = get_top_spareparts(&pool, 30, 5).await.unwrap();
+        assert_eq!(tops.len(), 1);
+        assert_eq!(tops[0].name, "Roller");
+        assert_eq!(tops[0].qty_sold, 1);
+        assert!(tops[0].revenue >= 95000.0);
+        assert_eq!(tops[0].stock, Some(3));
     }
 }

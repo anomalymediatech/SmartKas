@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Input, Button, Textarea, Select } from '@/components/ui';
 import { useAppStore } from '@/stores';
 import { useToast } from '@/hooks/useToast';
-import { dbGetPrinters } from '@/hooks/useDatabase';
+import { dbGetPrinters, dbUploadShopLogo, dbDeleteShopLogo, dbGetShopLogoBase64 } from '@/hooks/useDatabase';
 import type { Settings, PrinterInfo } from '@/types';
 
 export function ShopSettingsForm() {
@@ -15,11 +15,23 @@ export function ShopSettingsForm() {
     receipt_footer: '',
     printer_name: null,
     paper_width: 80,
+    shop_logo: null,
   });
   const [syncedSettings, setSyncedSettings] = useState<Settings | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  const loadLogoPreview = async () => {
+    const base64 = await dbGetShopLogoBase64();
+    setLogoPreview(base64);
+  };
 
   useEffect(() => {
     dbGetPrinters().then(setPrinters).catch(() => setPrinters([]));
+  }, []);
+
+  useEffect(() => {
+    dbGetShopLogoBase64().then(setLogoPreview);
   }, []);
 
   if (settings && settings !== syncedSettings) {
@@ -30,11 +42,56 @@ export function ShopSettingsForm() {
       receipt_footer: settings.receipt_footer || '',
       printer_name: settings.printer_name ?? null,
       paper_width: settings.paper_width ?? 80,
+      shop_logo: settings.shop_logo ?? null,
     });
+    loadLogoPreview();
   }
 
   const handleChange = (field: string, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      error('Format tidak didukung', 'Gunakan file PNG atau JPG');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      error('File terlalu besar', 'Maksimal 2MB');
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      const extension = file.type === 'image/png' ? 'png' : 'jpg';
+      const savedName = await dbUploadShopLogo(Array.from(bytes), extension);
+      const base64 = await dbGetShopLogoBase64();
+      setLogoPreview(base64);
+      setFormData((prev) => ({ ...prev, shop_logo: savedName }));
+      success('Berhasil', 'Logo berhasil diupload');
+    } catch {
+      error('Gagal', 'Gagal mengupload logo');
+    } finally {
+      setLogoUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleLogoDelete = async () => {
+    try {
+      await dbDeleteShopLogo();
+      setLogoPreview(null);
+      setFormData((prev) => ({ ...prev, shop_logo: null }));
+      success('Berhasil', 'Logo dihapus');
+    } catch {
+      error('Gagal', 'Gagal menghapus logo');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,31 +113,69 @@ export function ShopSettingsForm() {
           </span>
           Informasi Toko
         </h3>
-        
-        <Input
-          label="Nama Bengkel"
-          value={formData.shop_name ?? ''}
-          onChange={(e) => handleChange('shop_name', e.target.value)}
-          placeholder="KASMINI BENGKEL"
-          required
-        />
-        
-        <Textarea
-          label="Alamat Bengkel"
-          value={formData.shop_address ?? ''}
-          onChange={(e) => handleChange('shop_address', e.target.value)}
-          placeholder="Jl. Raya No. 123, Jakarta"
-          rows={3}
-        />
-        
-        <Textarea
-          label="Footer Struk"
-          value={formData.receipt_footer ?? ''}
-          onChange={(e) => handleChange('receipt_footer', e.target.value)}
-          placeholder="Service lebih dari 7x gratis 1x. Barang yang sudah dibeli tidak dapat dikembalikan."
-          rows={3}
-          helperText="Teks yang akan dicetak di bagian bawah struk"
-        />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-industrial-700 mb-2">Logo Struk</label>
+            <div className="flex items-center gap-4">
+              <div className="relative w-24 h-24 bg-industrial-50 rounded-lg border border-industrial-200 flex items-center justify-center overflow-hidden">
+                {logoPreview ? (
+                  <img src={logoPreview} alt="Logo preview" className="max-w-full max-h-full object-contain" />
+                ) : (
+                  <svg className="w-10 h-10 text-industrial-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleLogoSelect}
+                    disabled={logoUploading}
+                    className="sr-only"
+                    id="logo-upload"
+                  />
+                  <Button type="button" variant="outline" size="sm" disabled={logoUploading}>
+                    {logoUploading ? 'Mengupload...' : logoPreview ? 'Ganti Logo' : 'Upload Logo'}
+                  </Button>
+                </label>
+                {logoPreview && (
+                  <Button type="button" variant="danger" size="sm" onClick={handleLogoDelete}>
+                    Hapus Logo
+                  </Button>
+                )}
+                <p className="text-xs text-industrial-500">PNG/JPG, max 2MB. Disarankan rasio 3:1 (lebar:tinggi)</p>
+              </div>
+            </div>
+          </div>
+
+          <Input
+            label="Nama Bengkel"
+            value={formData.shop_name ?? ''}
+            onChange={(e) => handleChange('shop_name', e.target.value)}
+            placeholder="POS Bengkel"
+            required
+          />
+
+          <Textarea
+            label="Alamat Bengkel"
+            value={formData.shop_address ?? ''}
+            onChange={(e) => handleChange('shop_address', e.target.value)}
+            placeholder="Jl. Raya No. 123, Jakarta"
+            rows={3}
+          />
+
+          <Textarea
+            label="Footer Struk"
+            value={formData.receipt_footer ?? ''}
+            onChange={(e) => handleChange('receipt_footer', e.target.value)}
+            placeholder="Service lebih dari 7x gratis 1x. Barang yang sudah dibeli tidak dapat dikembalikan."
+            rows={3}
+            helperText="Teks yang akan dicetak di bagian bawah struk"
+          />
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-industrial-200 p-6">
@@ -114,7 +209,7 @@ export function ShopSettingsForm() {
       </div>
 
       <div className="flex justify-end gap-3">
-        <Button type="button" variant="secondary" onClick={() => setFormData({ shop_name: '', shop_address: '', receipt_footer: '', printer_name: null, paper_width: 80 })}>
+        <Button type="button" variant="secondary" onClick={() => setFormData({ shop_name: '', shop_address: '', receipt_footer: '', printer_name: null, paper_width: 80, shop_logo: null })}>
           Reset
         </Button>
         <Button type="submit" loading={isLoading}>

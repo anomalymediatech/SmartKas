@@ -11,8 +11,10 @@ export function CartSummary() {
     sparepartItems,
     discount,
     paidAmount,
+    paymentMethod,
     setDiscount,
     setPaidAmount,
+    setPaymentMethod,
     getSubtotalLayanan,
     getSubtotalSparepart,
     getSubtotal,
@@ -57,31 +59,20 @@ export function CartSummary() {
     }
   };
 
-  const handleQuickPay = (amount: number) => {
-    setPaidAmount(amount);
-  };
-
-  const quickPayAmounts = [
-    totalAmount,
-    Math.ceil(totalAmount / 10000) * 10000,
-    Math.ceil(totalAmount / 50000) * 50000,
-    Math.ceil(totalAmount / 100000) * 100000,
-  ].filter((v, i, arr) => arr.indexOf(v) === i && v >= totalAmount);
-
   return (
-    <div className="bg-white rounded-xl border border-industrial-200 p-4 md:p-6 sticky bottom-4">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="bg-white rounded-xl border border-industrial-200 p-3">
+      <div className="grid grid-cols-1 gap-6">
         {/* Subtotal Breakdown */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-4">
           {/* Layanan Subtotal */}
           {layananItems.length > 0 && (
             <div className="bg-accent-50 rounded-lg p-4 border border-accent-100">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-accent-700 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-accent-500 rounded-full"></span>
+                  <span className="w-1.5 h-1.5 bg-accent-500 rounded-full"></span>
                   LAYANAN
                 </h4>
-                <span className="font-mono text-lg font-bold text-accent-700">
+                <span className="font-mono text-sm font-bold text-accent-700">
                   {formatRupiah(subtotalLayanan)}
                 </span>
               </div>
@@ -96,10 +87,10 @@ export function CartSummary() {
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-semibold text-blue-700 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
                   SPARE PART
                 </h4>
-                <span className="font-mono text-lg font-bold text-blue-700">
+                <span className="font-mono text-sm font-bold text-blue-700">
                   {formatRupiah(subtotalSparepart)}
                 </span>
               </div>
@@ -120,9 +111,9 @@ export function CartSummary() {
               <span className="font-mono font-medium text-danger-600">- {formatRupiah(discount)}</span>
             </div>
             <div className="border-t border-industrial-200 pt-3">
-              <div className="flex justify-between text-lg">
+              <div className="flex justify-between text-base">
                 <span className="font-semibold text-industrial-900">TOTAL</span>
-                <span className="font-mono font-bold text-xl text-accent-600">
+                <span className="font-mono font-bold text-base text-accent-600">
                   {formatRupiah(totalAmount)}
                 </span>
               </div>
@@ -138,21 +129,35 @@ export function CartSummary() {
               PEMBAYARAN
             </h4>
             
+            {/* Payment Method */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-industrial-700 mb-1.5">Metode Bayar</label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as 'Cash' | 'Transfer' | 'QRIS')}
+                className="w-full px-3 py-1.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500"
+              >
+                <option value="Cash">Cash</option>
+                <option value="Transfer">Transfer</option>
+                <option value="QRIS">QRIS</option>
+              </select>
+            </div>
+
             {/* Discount Input */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-industrial-700 mb-1.5">
                 Diskon (Rp)
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-industrial-400 font-mono">Rp</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-industrial-400 font-mono pointer-events-none">Rp</span>
                 <input
                   ref={discountRef}
                   type="text"
-                  value={discount > 0 ? formatRupiah(discount).replace('Rp ', '') : ''}
+                  value={discount > 0 ? discount : ''}
                   onChange={handleDiscountChange}
                   onKeyDown={(e) => { if (e.key === 'Enter') paidAmountRef.current?.focus(); }}
                   placeholder="0"
-                  className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-right font-mono"
+                  className="w-full pl-8 pr-4 py-1.5 rounded-lg border border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-right font-mono"
                   inputMode="numeric"
                 />
               </div>
@@ -164,9 +169,9 @@ export function CartSummary() {
                 <span className="text-industrial-600">Total Bayar</span>
                 <span className="font-mono font-semibold text-industrial-900">{formatRupiah(totalAmount)}</span>
               </div>
-              <div className="flex justify-between text-lg">
+              <div className="flex justify-between text-base">
                 <span className="font-semibold text-industrial-900">Uang Diterima</span>
-                <span className="font-mono font-bold text-xl text-success-600">
+                <span className="font-mono font-bold text-base text-success-600">
                   {paidAmount > 0 ? formatRupiah(paidAmount) : '-'}
                 </span>
               </div>
@@ -178,31 +183,18 @@ export function CartSummary() {
                 Bayar <span className="text-danger-500">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-industrial-400 font-mono">Rp</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-industrial-400 font-mono pointer-events-none">Rp</span>
                 <input
                   ref={paidAmountRef}
                   type="text"
-                  value={paidAmount > 0 ? formatRupiah(paidAmount).replace('Rp ', '') : ''}
+                  value={paidAmount > 0 ? paidAmount : ''}
                   onChange={handlePaidAmountChange}
                   onKeyDown={handlePaidAmountKeyDown}
-                  placeholder={formatRupiah(totalAmount).replace('Rp ', '')}
-                  className="w-full pl-8 pr-4 py-3 rounded-lg border-2 border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-right font-mono text-lg"
+                  placeholder={String(totalAmount)}
+                  className="w-full pl-8 pr-4 py-2 rounded-lg border-2 border-industrial-300 focus:outline-none focus:ring-2 focus:ring-industrial-500 focus:border-industrial-500 text-right font-mono text-sm"
                   inputMode="numeric"
                 />
               </div>
-            </div>
-
-            {/* Quick Pay Buttons */}
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {quickPayAmounts.map((amount) => (
-                <button
-                  key={amount}
-                  onClick={() => handleQuickPay(amount)}
-                  className="py-2 px-3 rounded-lg border border-industrial-200 hover:bg-industrial-50 text-sm font-medium text-industrial-700 transition-colors"
-                >
-                  {formatRupiah(amount)}
-                </button>
-              ))}
             </div>
 
             {/* Change */}
@@ -211,7 +203,7 @@ export function CartSummary() {
               changeAmount >= 0 ? 'bg-success-50 border border-success-200 text-success-700' : 'bg-danger-50 border border-danger-200 text-danger-700'
             )}>
               <div className="text-sm text-industrial-500 mb-1">KEMBALIAN</div>
-              <div className="text-2xl font-bold">
+              <div className="text-xl font-bold">
                 {changeAmount >= 0 ? formatRupiah(changeAmount) : formatRupiah(Math.abs(changeAmount))}
               </div>
               {changeAmount < 0 && (

@@ -9,8 +9,8 @@ pub struct Employee {
     pub name: String,
     pub role: String,
     pub phone: Option<String>,
-    pub commission_rate: f64,
     pub base_salary: f64,
+    pub daily_rate: f64,
     pub is_active: i64,
 }
 
@@ -19,8 +19,17 @@ pub struct CreateEmployeeInput {
     pub name: String,
     pub role: String,
     pub phone: Option<String>,
-    pub commission_rate: Option<f64>,
     pub base_salary: Option<f64>,
+    pub daily_rate: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateEmployeeInput {
+    pub id: i64,
+    pub name: String,
+    pub phone: Option<String>,
+    pub base_salary: f64,
+    pub daily_rate: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,30 +41,11 @@ pub struct MechanicCommissionSummary {
     pub total_commission: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CommissionLine {
-    pub service_name: String,
-    pub invoice_number: String,
-    pub transaction_date: String,
-    pub price: f64,
-    pub commission: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MechanicMonthlySummary {
-    pub mechanic_id: i64,
-    pub mechanic_name: String,
-    pub services_count: i64,
-    pub total_services: f64,
-    pub total_commission: f64,
-    pub lines: Vec<CommissionLine>,
-}
-
 
 pub async fn get_employees(pool: &DbPool) -> Result<Vec<Employee>> {
     let conn = pool.lock().await;
     let mut rows = conn
-        .query("SELECT id, name, role, phone, commission_rate, base_salary, is_active FROM employees ORDER BY name", ())
+        .query("SELECT id, name, role, phone, base_salary, daily_rate, is_active FROM employees ORDER BY name", ())
         .await?;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await? {
@@ -64,8 +54,8 @@ pub async fn get_employees(pool: &DbPool) -> Result<Vec<Employee>> {
             name: row.get(1)?,
             role: row.get(2)?,
             phone: row.get(3)?,
-            commission_rate: row.get(4)?,
-            base_salary: row.get(5)?,
+            base_salary: row.get(4)?,
+            daily_rate: row.get(5)?,
             is_active: row.get(6)?,
         });
     }
@@ -74,17 +64,17 @@ pub async fn get_employees(pool: &DbPool) -> Result<Vec<Employee>> {
 
 pub async fn add_employee(pool: &DbPool, input: CreateEmployeeInput) -> Result<Employee> {
     let conn = pool.lock().await;
-    let rate = input.commission_rate.unwrap_or(0.0);
     let salary = input.base_salary.unwrap_or(0.0);
+    let daily = input.daily_rate.unwrap_or(0.0);
     conn.execute(
-        "INSERT INTO employees (name, role, phone, commission_rate, base_salary) VALUES (?, ?, ?, ?, ?)",
-        params![input.name.clone(), input.role.clone(), input.phone.clone(), rate, salary],
+        "INSERT INTO employees (name, role, phone, base_salary, daily_rate) VALUES (?, ?, ?, ?, ?)",
+        params![input.name.clone(), input.role.clone(), input.phone.clone(), salary, daily],
     )
     .await?;
     let id = conn.last_insert_rowid();
 
-    // Keep mechanics table in sync so POS dropdown picks up new mechanic immediately
-    if input.role == "mechanic" {
+    // Keep mechanics table in sync so POS dropdown picks up new mechanic/helper immediately
+    if input.role == "mechanic" || input.role == "helper" {
         conn.execute(
             "INSERT INTO mechanics (name, is_active, employee_id) VALUES (?, 1, ?)",
             params![input.name.clone(), id],
@@ -97,9 +87,53 @@ pub async fn add_employee(pool: &DbPool, input: CreateEmployeeInput) -> Result<E
         name: input.name,
         role: input.role,
         phone: input.phone,
-        commission_rate: rate,
         base_salary: salary,
+        daily_rate: daily,
         is_active: 1,
+    })
+}
+
+pub async fn update_employee(pool: &DbPool, input: UpdateEmployeeInput) -> Result<Employee> {
+    let conn = pool.lock().await;
+    let mut rows = conn
+        .query("SELECT role, is_active FROM employees WHERE id = ?", params![input.id])
+        .await?;
+    let (role, is_active): (String, i64) = match rows.next().await? {
+        Some(row) => (row.get(0)?, row.get(1)?),
+        None => return Err(anyhow::anyhow!("Karyawan tidak ditemukan")),
+    };
+    drop(rows);
+
+    conn.execute(
+        "UPDATE employees SET name = ?, phone = ?, base_salary = ?, daily_rate = ? WHERE id = ?",
+        params![input.name.clone(), input.phone.clone(), input.base_salary, input.daily_rate, input.id],
+    )
+    .await?;
+
+    // Sync name to POS-facing mechanics table for mechanic/helper roles
+    if role == "mechanic" || role == "helper" {
+        let updated = conn.execute(
+            "UPDATE mechanics SET name = ? WHERE employee_id = ?",
+            params![input.name.clone(), input.id],
+        )
+        .await?;
+        if updated == 0 {
+            conn.execute(
+                "INSERT INTO mechanics (name, is_active, employee_id) VALUES (?, ?, ?)",
+                params![input.name.clone(), is_active, input.id],
+            )
+            .await?;
+        }
+    }
+
+    Ok(Employee {
+        id: input.id,
+        name: input.name,
+        role,
+        phone: input.phone,
+        base_salary: input.base_salary,
+        daily_rate: input.daily_rate,
+        is_active,
     })
 }
 
@@ -119,14 +153,13 @@ pub async fn calculate_mechanic_commission(
     let conn = pool.lock().await;
     let (date_filter, values) = super::date_range_filter("t", date_from, date_to);
     let sql = format!(
-        r#"SELECT e.id, e.name, COUNT(td.id), COALESCE(SUM(td.total_price), 0),
-                  COALESCE(SUM(td.total_price * e.commission_rate / 100.0), 0)
-           FROM employees e
-           JOIN mechanics m ON m.employee_id = e.id
-           JOIN transactions t ON t.mechanic_id = m.id AND t.status = 'Lunas'
-           JOIN transaction_details td ON td.transaction_id = t.id AND td.item_type = 'layanan'
-           WHERE e.role = 'mechanic'{}
-           GROUP BY e.id, e.name ORDER BY e.name"#,
+        r#"SELECT e.id, e.name, COUNT(td.id), COALESCE(SUM(td.total_price), 0.0)
+            FROM employees e
+            JOIN mechanics m ON m.employee_id = e.id
+            JOIN transactions t ON t.mechanic_id = m.id AND t.status = 'Lunas'
+            JOIN transaction_details td ON td.transaction_id = t.id AND td.item_type = 'layanan'
+            WHERE e.role = 'mechanic'{}
+            GROUP BY e.id, e.name ORDER BY e.name"#,
         date_filter
     );
 
@@ -138,69 +171,10 @@ pub async fn calculate_mechanic_commission(
             mechanic_name: row.get(1)?,
             services_count: row.get(2)?,
             total_services: row.get(3)?,
-            total_commission: row.get(4)?,
+            total_commission: 0.0,
         });
     }
     Ok(out)
-}
-
-pub async fn get_mechanic_monthly_summary(
-    pool: &DbPool,
-    employee_id: i64,
-    month: i32,
-    year: i32,
-) -> Result<MechanicMonthlySummary> {
-    let conn = pool.lock().await;
-
-    let mut emp_rows = conn
-        .query("SELECT name, commission_rate FROM employees WHERE id = ?", params![employee_id])
-        .await?;
-    let (name, rate): (String, f64) = if let Some(row) = emp_rows.next().await? {
-        (row.get(0)?, row.get(1)?)
-    } else {
-        return Err(anyhow::anyhow!("Employee tidak ditemukan"));
-    };
-
-    let mut rows = conn
-        .query(
-            r#"SELECT td.item_name, t.invoice_number, t.transaction_date, td.total_price
-               FROM transaction_details td
-               JOIN transactions t ON t.id = td.transaction_id
-               JOIN mechanics m ON m.id = t.mechanic_id
-               WHERE m.employee_id = ? AND td.item_type = 'layanan' AND t.status = 'Lunas'
-                 AND strftime('%m', t.transaction_date, 'localtime') = printf('%02d', ?)
-                 AND strftime('%Y', t.transaction_date, 'localtime') = ?
-               ORDER BY t.transaction_date DESC"#,
-            params![employee_id, month, year.to_string()],
-        )
-        .await?;
-
-    let mut lines = Vec::new();
-    let mut total_services = 0.0;
-    while let Some(row) = rows.next().await? {
-        let service_name: String = row.get(0)?;
-        let price: f64 = row.get(3)?;
-        total_services += price;
-        lines.push(CommissionLine {
-            service_name,
-            invoice_number: row.get(1)?,
-            transaction_date: row.get(2)?,
-            price,
-            commission: price * rate / 100.0,
-        });
-    }
-
-    let services_count = lines.len() as i64;
-    let total_commission = lines.iter().map(|l| l.commission).sum();
-
-    Ok(MechanicMonthlySummary {
-        mechanic_id: employee_id,
-        mechanic_name: name,
-        services_count,
-        total_services,
-        total_commission,
-        lines,
-    })
 }
 
 pub async fn record_commissions(
@@ -246,8 +220,8 @@ mod tests {
             name: "Budi".into(),
             role: "mechanic".into(),
             phone: None,
-            commission_rate: Some(10.0),
             base_salary: None,
+            daily_rate: None,
         }).await.unwrap();
 
         let conn = pool.lock().await;
@@ -258,14 +232,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn commission_is_10_percent_of_layanan() {
+    async fn mechanic_commission_is_zero_without_manual_override() {
         let pool = setup().await;
         add_employee(&pool, CreateEmployeeInput {
             name: "Budi".into(),
             role: "mechanic".into(),
             phone: None,
-            commission_rate: Some(10.0),
             base_salary: None,
+            daily_rate: None,
         }).await.unwrap();
 
         let conn = pool.lock().await;
@@ -287,26 +261,21 @@ mod tests {
             change_amount: 0.0,
             payment_method: "Cash".into(),
             details: vec![
-                CreateTransactionDetailInput { item_type: "layanan".into(), item_name: "Tune Up".into(), quantity: 1, unit_price: 50000.0, total_price: 50000.0, sparepart_id: None },
+                CreateTransactionDetailInput { item_type: "layanan".into(), item_name: "Tune Up".into(), quantity: 1, unit_price: 50000.0, total_price: 50000.0, sparepart_id: None, service_type: None },
             ],
         }).await.unwrap();
 
         let summaries = calculate_mechanic_commission(&pool, None, None).await.unwrap();
+        // Commission calculation removed - total_commission should be 0
         assert_eq!(summaries.len(), 1);
-        assert!((summaries[0].total_commission - 5000.0).abs() < 0.01);
+        assert!((summaries[0].total_commission - 0.0).abs() < 0.01);
 
-        let month = chrono::Utc::now().format("%m").to_string().parse::<i32>().unwrap();
-        let year = chrono::Utc::now().format("%Y").to_string().parse::<i32>().unwrap();
-        let employees = get_employees(&pool).await.unwrap();
-        let monthly = get_mechanic_monthly_summary(&pool, employees[0].id, month, year).await.unwrap();
-        assert_eq!(monthly.services_count, 1);
-        assert!((monthly.total_commission - 5000.0).abs() < 0.01);
-
-        // Audit table recorded
+        // Audit table should be empty since commission not recorded
         let conn = pool.lock().await;
         let mut rows = conn.query("SELECT commission_amount FROM mechanic_commissions", ()).await.unwrap();
-        let amt: f64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
-        assert!((amt - 5000.0).abs() < 0.01);
+        let rows_count = rows.next().await.unwrap();
+        let amt: Option<f64> = rows_count.as_ref().and_then(|r| r.get(0).ok());
+        assert_eq!(amt, None);
     }
 
     #[tokio::test]
@@ -316,8 +285,8 @@ mod tests {
             name: "Budi".into(),
             role: "mechanic".into(),
             phone: None,
-            commission_rate: Some(10.0),
             base_salary: None,
+            daily_rate: None,
         }).await.unwrap();
         delete_employee(&pool, emp.id).await.unwrap();
 
@@ -328,5 +297,91 @@ mod tests {
         let mut rows = conn.query("SELECT is_active FROM mechanics", ()).await.unwrap();
         let active: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(active, 0);
+    }
+
+    #[tokio::test]
+    async fn update_employee_edits_rates_and_syncs_pos_name() {
+        let pool = setup().await;
+        let emp = add_employee(&pool, CreateEmployeeInput {
+            name: "Budi".into(),
+            role: "mechanic".into(),
+            phone: None,
+            base_salary: Some(1_500_000.0),
+            daily_rate: None,
+        }).await.unwrap();
+
+        let updated = update_employee(&pool, UpdateEmployeeInput {
+            id: emp.id,
+            name: "Budi Santoso".into(),
+            phone: Some("0812".into()),
+            base_salary: 1_600_000.0,
+            daily_rate: 0.0,
+        }).await.unwrap();
+
+        assert_eq!(updated.name, "Budi Santoso");
+        assert!((updated.base_salary - 1_600_000.0).abs() < 0.01);
+
+        let employees = get_employees(&pool).await.unwrap();
+        assert_eq!(employees.len(), 1);
+        assert_eq!(employees[0].name, "Budi Santoso");
+        assert_eq!(employees[0].phone.as_deref(), Some("0812"));
+
+        // POS-facing name stays in sync
+        let conn = pool.lock().await;
+        let mut rows = conn.query("SELECT name FROM mechanics", ()).await.unwrap();
+        assert_eq!(rows.next().await.unwrap().unwrap().get::<String>(0).unwrap(), "Budi Santoso");
+    }
+
+    #[tokio::test]
+    async fn helper_is_added_to_pos_without_commission() {
+        let pool = setup().await;
+        let emp = add_employee(&pool, CreateEmployeeInput {
+            name: "Asisten".into(),
+            role: "helper".into(),
+            phone: None,
+            base_salary: None,
+            daily_rate: Some(100_000.0),
+        }).await.unwrap();
+
+        // Helper appears in the POS mechanics table
+        let conn = pool.lock().await;
+        let mut rows = conn.query("SELECT employee_id FROM mechanics WHERE name = 'Asisten'", ()).await.unwrap();
+        assert_eq!(rows.next().await.unwrap().unwrap().get::<Option<i64>>(0).unwrap(), Some(emp.id));
+        drop(conn);
+
+        // ...but a transaction against them records no commission
+        let pool2 = pool.clone();
+        let conn2 = pool2.lock().await;
+        let mut rows = conn2.query("SELECT id FROM mechanics WHERE name = 'Asisten'", ()).await.unwrap();
+        let mech_id: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        drop(rows);
+        drop(conn2);
+
+        crate::database::repositories::transactions::create_transaction(&pool, crate::database::repositories::transactions::CreateTransactionInput {
+            vehicle_plate: "B 9".into(),
+            customer_name: None,
+            queue_number: 1,
+            mechanic_id: Some(mech_id),
+            cashier_name: "Admin".into(),
+            subtotal: 100_000.0,
+            discount: 0.0,
+            total_amount: 100_000.0,
+            paid_amount: 100_000.0,
+            change_amount: 0.0,
+            payment_method: "Cash".into(),
+            details: vec![crate::database::repositories::transactions::CreateTransactionDetailInput {
+                item_type: "layanan".into(),
+                item_name: "Cuci".into(),
+                quantity: 1,
+                unit_price: 100_000.0,
+                total_price: 100_000.0,
+                sparepart_id: None,
+                service_type: None,
+            }],
+        }).await.unwrap();
+
+        let conn = pool.lock().await;
+        let mut rows = conn.query("SELECT COUNT(*) FROM mechanic_commissions", ()).await.unwrap();
+        assert_eq!(rows.next().await.unwrap().unwrap().get::<i64>(0).unwrap(), 0);
     }
 }

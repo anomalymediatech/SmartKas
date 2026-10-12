@@ -23,17 +23,6 @@ pub fn bold_off() -> Vec<u8> {
     vec![0x1B, 0x45, 0x00] // ESC E 0
 }
 
-/// Character size (width, height multipliers 0-7)
-pub fn char_size(width: u8, height: u8) -> Vec<u8> {
-    let n = (width.min(7) << 4) | height.min(7);
-    vec![0x1D, 0x21, n] // GS ! n
-}
-
-/// Reset character size
-pub fn char_size_normal() -> Vec<u8> {
-    vec![0x1D, 0x21, 0x00]
-}
-
 /// Feed lines
 pub fn feed_lines(lines: u8) -> Vec<u8> {
     vec![0x1B, 0x64, lines] // ESC d n

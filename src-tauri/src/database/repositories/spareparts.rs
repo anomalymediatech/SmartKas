@@ -22,6 +22,15 @@ pub struct CreateSparepartInput {
     pub is_active: i32,
 }
 
+/// Excel import row: `None` = cell kosong, jangan ditimpa saat update.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImportSparepartInput {
+    pub name: String,
+    pub buy_price: Option<f64>,
+    pub sell_price: Option<f64>,
+    pub stock: Option<i32>,
+}
+
 impl From<CreateSparepartInput> for Sparepart {
     fn from(input: CreateSparepartInput) -> Self {
         Self {
@@ -190,9 +199,64 @@ pub async fn adjust_stock(pool: &DbPool, sparepart_id: i64, delta: i32, reason: 
         "INSERT INTO stock_movements (sparepart_id, movement_type, quantity, reference_type, reference_id, reason) VALUES (?, ?, ?, ?, ?, ?)",
         params![sparepart_id, movement_type, delta.abs(), reference_type, reference_id, reason],
     ).await?;
-    
-    conn.execute("COMMIT", ()).await?;
+
+    if let Err(e) = conn.execute("COMMIT", ()).await {
+        let _ = conn.execute("ROLLBACK", ()).await;
+        return Err(e.into());
+    }
     drop(conn);
 
     get_sparepart_by_id(pool, sparepart_id).await
+}
+pub async fn import_spareparts(pool: &DbPool, items: Vec<ImportSparepartInput>) -> Result<(usize, usize)> {
+    let conn = pool.lock().await;
+    conn.execute("BEGIN IMMEDIATE TRANSACTION", ()).await?;
+    let mut inserted = 0usize;
+    let mut updated = 0usize;
+    let mut result: Result<()> = Ok(());
+    for item in items {
+        match import_sparepart_row(&conn, &item).await {
+            Ok(true) => inserted += 1,
+            Ok(false) => updated += 1,
+            Err(e) => { result = Err(e); break; }
+        }
+    }
+    match result {
+        Ok(()) => {
+            if let Err(e) = conn.execute("COMMIT", ()).await {
+                let _ = conn.execute("ROLLBACK", ()).await;
+                return Err(e.into());
+            }
+        }
+        Err(e) => { let _ = conn.execute("ROLLBACK", ()).await; return Err(e); }
+    }
+    Ok((inserted, updated))
+}
+
+async fn import_sparepart_row(conn: &libsql::Connection, item: &ImportSparepartInput) -> Result<bool> {
+    let mut rows = conn.query("SELECT id FROM spareparts WHERE name = ?", params![item.name.clone()]).await?;
+    match rows.next().await? {
+        Some(row) => {
+            let id: i64 = row.get(0)?;
+            let mut updates = Vec::new();
+            let mut values: Vec<libsql::Value> = Vec::new();
+            if let Some(bp) = item.buy_price { updates.push("buy_price = ?"); values.push(bp.into()); }
+            if let Some(sp) = item.sell_price { updates.push("sell_price = ?"); values.push(sp.into()); }
+            if let Some(st) = item.stock { updates.push("stock = ?"); values.push(st.into()); }
+            if updates.is_empty() { return Ok(false); }
+            values.push(id.into());
+            conn.execute(
+                &format!("UPDATE spareparts SET {} WHERE id = ?", updates.join(", ")),
+                libsql::params_from_iter(values),
+            ).await?;
+            Ok(false)
+        }
+        None => {
+            conn.execute(
+                "INSERT INTO spareparts (name, buy_price, sell_price, stock, is_active) VALUES (?, ?, ?, ?, 1)",
+                params![item.name.clone(), item.buy_price.unwrap_or(0.0), item.sell_price.unwrap_or(0.0), item.stock.unwrap_or(0)],
+            ).await?;
+            Ok(true)
+        }
+    }
 }
