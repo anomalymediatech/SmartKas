@@ -116,6 +116,12 @@ pub fn run() {
             commands::auth::login,
             commands::auth::logout,
             commands::auth::check_session,
+
+            // Logo commands
+            commands::logo::upload_shop_logo,
+            commands::logo::delete_shop_logo,
+            commands::logo::get_shop_logo_path,
+            commands::logo::get_shop_logo_base64,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
